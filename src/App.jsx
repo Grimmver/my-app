@@ -918,8 +918,10 @@ const handleQuantityChange = async (changeAmount) => {
                 }
               }}
             />
-            <div className="absolute top-20 bg-black/70 text-white p-4 rounded-lg z-[101]">
-              Последнее значение: {lastScanned}
+            <div className="absolute top-20 bg-black/80 text-white p-4 rounded-lg z-[101] text-xs">
+              <div>Считано: {lastScanned}</div>
+              <div>Товаров в базе: {products.length}</div>
+              <div>Статус: {scannedProduct ? "НАЙДЕНО!" : "Ищем..."}</div>
             </div>
             {/* Кнопка выхода поверх видео */}
             <button 
