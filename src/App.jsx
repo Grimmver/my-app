@@ -888,7 +888,7 @@ const handleQuantityChange = async (changeAmount) => {
       {isScannerOpen && (
         <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center p-4">
           <div className="w-full max-w-sm">
-            <QrReader
+            <BarcodeScanner
               onResult={(result, error) => {
                 if (result) {
                   const found = products.find(p => p.govCode === result.text.trim());
@@ -909,6 +909,9 @@ const handleQuantityChange = async (changeAmount) => {
             >
               Закрыть сканер
             </button>
+            <div className="text-white text-xs p-2 bg-red-900">
+              Проверка: если вы видите этот текст, значит компонент загружен. Если экран белый — проблема в доступе к камере.
+            </div>
           </div>
         </div>
       )}
