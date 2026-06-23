@@ -333,8 +333,8 @@ export default function App() {
     setIsAiLoading(true);
     setAiResponse('');
 
-    const apiKey = ""; // Ключ подставляется автоматически вашей платформой
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+    const apiKey = "AQ.Ab8RN6JdmH0WmHQN1p1mkbRQNdoIya1MWJv0U0kTYqXHbMImPQ"; // Ключ подставляется автоматически вашей платформой
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
     const promptText = `Ты бизнес-аналитик. Проанализируй текущие запасы склада и дай 2-3 практических емких совета.
 Всего позиций: ${products.length}. Общая стоимость: ${stats.totalRetailValue} тг. Ожидаемая чистая прибыль: ${stats.expectedProfit} тг.
