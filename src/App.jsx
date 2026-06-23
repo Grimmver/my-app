@@ -218,7 +218,53 @@ export default function App() {
       }
     }
   };
+// --- ДОБАВИТЬ ФУНКЦИИ В APP.JSX ---
 
+  const handleAddCategory = async (e) => {
+    e.preventDefault();
+    if (!newCategoryName.trim()) return;
+
+    const colors = [
+      'bg-red-100 text-red-800 border-red-200',
+      'bg-orange-100 text-orange-800 border-orange-200',
+      'bg-emerald-100 text-emerald-800 border-emerald-200',
+      'bg-blue-100 text-blue-800 border-blue-200',
+      'bg-purple-100 text-purple-800 border-purple-200',
+      'bg-pink-100 text-pink-800 border-pink-200'
+    ];
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+    const newCategory = { id: 'cat-' + Date.now(), name: newCategoryName.trim(), color: randomColor };
+
+    try {
+      const res = await fetch(`${API_URL}/categories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': currentPassword },
+        body: JSON.stringify(newCategory)
+      });
+      if (res.ok) {
+        setNewCategoryName('');
+        showToast(`Категория "${newCategory.name}" создана`);
+        fetchData(); // Обновляем базу
+      }
+    } catch (err) {
+      showToast('Ошибка при добавлении категории', 'error');
+    }
+  };
+
+  const handleDeleteCategory = async (catId) => {
+    try {
+      const res = await fetch(`${API_URL}/categories/${catId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': currentPassword }
+      });
+      if (res.ok) {
+        showToast('Категория удалена', 'warning');
+        fetchData(); // Обновляем базу, чтобы товары потеряли привязку
+      }
+    } catch (err) {
+      showToast('Ошибка удаления', 'error');
+    }
+  };
   // Обработка клика по заголовку таблицы для сортировки
   const requestSort = (key) => {
     let direction = 'asc';
@@ -613,7 +659,44 @@ export default function App() {
           </div>
         </div>
       )}
+{/* МОДАЛЬНОЕ ОКНО: Управление категориями */}
+      {isManageCategoriesOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-2">
+              <h3 className="text-lg font-bold text-slate-900">Управление категориями</h3>
+              <button onClick={() => setIsManageCategoriesOpen(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+            </div>
+            
+            <form onSubmit={handleAddCategory} className="flex gap-2">
+              <input 
+                type="text" 
+                required 
+                placeholder="Название новой категории..." 
+                value={newCategoryName} 
+                onChange={(e) => setNewCategoryName(e.target.value)} 
+                className="flex-1 px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" 
+              />
+              <button type="submit" className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700">Создать</button>
+            </form>
 
+            <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+              {categories.length > 0 ? categories.map((c) => {
+                const count = products.filter(p => p.categoryId === c.id).length;
+                return (
+                  <div key={c.id} className="flex items-center justify-between p-2 rounded-xl border border-slate-100 hover:bg-slate-50">
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${c.color}`}>{c.name}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-slate-400">{count} тов.</span>
+                      <button type="button" onClick={() => handleDeleteCategory(c.id)} className="text-rose-500 hover:text-rose-700 text-xs font-medium">Удалить</button>
+                    </div>
+                  </div>
+                );
+              }) : <p className="text-xs text-slate-400 text-center py-2">Категории не созданы</p>}
+            </div>
+          </div>
+        </div>
+      )}
       {/* МОДАЛЬНОЕ ОКНО: AI-Аналитик */}
       {isAiModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">

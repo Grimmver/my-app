@@ -90,6 +90,26 @@ app.delete('/api/products/:id', authenticate, async (req, res) => {
   await db.run('DELETE FROM products WHERE id = ?', [req.params.id]);
   res.json({ success: true });
 });
+// --- ДОБАВИТЬ ЭТО В SERVER.JS ---
+
+// Создание новой категории
+app.post('/api/categories', authenticate, async (req, res) => {
+  const { id, name, color } = req.body;
+  await db.run(
+    `INSERT INTO categories (id, name, color) VALUES (?, ?, ?)`,
+    [id, name, color]
+  );
+  res.json({ success: true });
+});
+
+// Удаление категории
+app.delete('/api/categories/:id', authenticate, async (req, res) => {
+  // 1. Удаляем саму категорию
+  await db.run('DELETE FROM categories WHERE id = ?', [req.params.id]);
+  // 2. Отвязываем все товары, которые были в этой категории (переносим в "Без категории")
+  await db.run('UPDATE products SET categoryId = "" WHERE categoryId = ?', [req.params.id]);
+  res.json({ success: true });
+});
 
 // 6. Раздача интерфейса React (Тот самый кусок, который вызывал ошибку, теперь на своем месте)
 app.use(express.static(path.join(__dirname, 'dist')));
