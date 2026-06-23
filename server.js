@@ -1,49 +1,54 @@
 import express from 'express';
 import cors from 'cors';
-import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
+import { createClient } from '@libsql/client'; // Новый клиент для работы с облаком Turso
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// 1. Настройка путей
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// 2. Инициализация сервера (создаем тот самый app)
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const SHARED_PASSWORD = "123"; // Можете поменять на свой
+const SHARED_PASSWORD = "123"; // Ваш пароль для входа
 
-// 3. База данных
-let db;
+// Подключение к облачной базе Turso
+// Если запуск на компьютере и ключей нет в системе, создастся локальный файл local.db
+const db = createClient({
+  url: process.env.TURSO_DATABASE_URL || "file:local.db",
+  authToken: process.env.TURSO_AUTH_TOKEN || "",
+});
+
+// Инициализация таблиц в облаке
 (async () => {
-  db = await open({
-    filename: './database.sqlite',
-    driver: sqlite3.Database
-  });
-
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS categories (
-      id TEXT PRIMARY KEY,
-      name TEXT,
-      color TEXT
-    );
-    CREATE TABLE IF NOT EXISTS products (
-      id TEXT PRIMARY KEY,
-      name TEXT,
-      internalCode TEXT,
-      govCode TEXT,
-      quantity INTEGER,
-      price REAL,
-      cost REAL,
-      categoryId TEXT
-    );
-  `);
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS categories (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        color TEXT
+      );
+    `);
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS products (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        internalCode TEXT,
+        govCode TEXT,
+        quantity INTEGER,
+        price REAL,
+        cost REAL,
+        categoryId TEXT
+      );
+    `);
+    console.log("Успешно подключено к облачной базе данных Turso");
+  } catch (err) {
+    console.error("Ошибка инициализации базы данных Turso:", err);
+  }
 })();
 
-// 4. Проверка пароля
+// Проверка пароля
 const authenticate = (req, res, next) => {
   const password = req.headers['authorization'];
   if (password === SHARED_PASSWORD) {
@@ -53,7 +58,7 @@ const authenticate = (req, res, next) => {
   }
 };
 
-// 5. Роуты (API)
+// API: Авторизация
 app.post('/api/login', (req, res) => {
   const { password } = req.body;
   if (password === SHARED_PASSWORD) {
@@ -63,61 +68,104 @@ app.post('/api/login', (req, res) => {
   }
 });
 
+// API: Получение всех данных
 app.get('/api/data', authenticate, async (req, res) => {
-  const products = await db.all('SELECT * FROM products');
-  const categories = await db.all('SELECT * FROM categories');
-  res.json({ products, categories });
+  try {
+    const productsResult = await db.execute('SELECT * FROM products');
+    const categoriesResult = await db.execute('SELECT * FROM categories');
+    res.json({ 
+      products: productsResult.rows, 
+      categories: categoriesResult.rows 
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
+// API: Добавление товара
 app.post('/api/products', authenticate, async (req, res) => {
   const p = req.body;
-  await db.run(
-    `INSERT INTO products (id, name, internalCode, govCode, quantity, price, cost, categoryId) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [p.id, p.name, p.internalCode, p.govCode, p.quantity, p.price, p.cost, p.categoryId]
-  );
-  res.json({ success: true });
+  try {
+    await db.execute({
+      sql: `INSERT INTO products (id, name, internalCode, govCode, quantity, price, cost, categoryId) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [p.id, p.name, p.internalCode, p.govCode, p.quantity, p.price, p.cost, p.categoryId]
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
+// API: Быстрое редактирование товара
 app.put('/api/products/:id', authenticate, async (req, res) => {
   const { id } = req.params;
   const { field, value } = req.body;
-  await db.run(`UPDATE products SET ${field} = ? WHERE id = ?`, [value, id]);
-  res.json({ success: true });
+  
+  // Безопасная проверка разрешенных полей для защиты от SQL-инъекций
+  const allowedFields = ['quantity', 'price', 'cost', 'categoryId'];
+  if (!allowedFields.includes(field)) {
+    return res.status(400).json({ error: 'Недопустимое поле' });
+  }
+
+  try {
+    await db.execute({
+      sql: `UPDATE products SET ${field} = ? WHERE id = ?`,
+      args: [value, id]
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
+// API: Удаление товара
 app.delete('/api/products/:id', authenticate, async (req, res) => {
-  await db.run('DELETE FROM products WHERE id = ?', [req.params.id]);
-  res.json({ success: true });
+  try {
+    await db.execute({
+      sql: 'DELETE FROM products WHERE id = ?',
+      args: [req.params.id]
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
-// --- ДОБАВИТЬ ЭТО В SERVER.JS ---
 
-// Создание новой категории
+// API: Создание категории
 app.post('/api/categories', authenticate, async (req, res) => {
   const { id, name, color } = req.body;
-  await db.run(
-    `INSERT INTO categories (id, name, color) VALUES (?, ?, ?)`,
-    [id, name, color]
-  );
-  res.json({ success: true });
+  try {
+    await db.execute({
+      sql: `INSERT INTO categories (id, name, color) VALUES (?, ?, ?)`,
+      args: [id, name, color]
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Удаление категории
+// API: Удаление категории
 app.delete('/api/categories/:id', authenticate, async (req, res) => {
-  // 1. Удаляем саму категорию
-  await db.run('DELETE FROM categories WHERE id = ?', [req.params.id]);
-  // 2. Отвязываем все товары, которые были в этой категории (переносим в "Без категории")
-  await db.run('UPDATE products SET categoryId = "" WHERE categoryId = ?', [req.params.id]);
-  res.json({ success: true });
+  try {
+    // Используем транзакцию из двух запросов
+    await db.batch([
+      { sql: 'DELETE FROM categories WHERE id = ?', args: [req.params.id] },
+      { sql: 'UPDATE products SET categoryId = "" WHERE categoryId = ?', args: [req.params.id] }
+    ]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// 6. Раздача интерфейса React (Тот самый кусок, который вызывал ошибку, теперь на своем месте)
+// Раздача интерфейса React
 app.use(express.static(path.join(__dirname, 'dist')));
 
 app.get(/.*/, (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-// 7. Запуск сервера на порту Render
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Сервер запущен на порту ${PORT}`));
+app.listen(PORT, () => console.log(`Сервер работает на порту ${PORT}`));
