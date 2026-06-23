@@ -887,30 +887,33 @@ const handleQuantityChange = async (changeAmount) => {
       )}
       {/* МОДАЛЬНОЕ ОКНО: Сканер */}
       {isScannerOpen && (
-        <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center p-4">
-          <div className="w-full max-w-sm">
+        <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center">
+          <div className="relative w-full h-full flex flex-col items-center justify-center">
             <BarcodeScanner
-              width={300}
-              height={300}
+              width={"100%"} // Растягиваем на всю ширину
+              height={"100%"} // Растягиваем на всю высоту
+              videoConstraints={{ facingMode: "environment" }} // Всегда задняя камера
               onUpdate={(err, result) => {
-                if (result) {
-                  const scannedCode = result.text.trim();
-                  const found = products.find(p => p.govCode === scannedCode);
-                  if (found) {
-                    setScannedProduct(found);
-                  }
+              if (result) {
+                const rawValue = result.getText ? result.getText() : result.text;
+                const cleanValue = rawValue.trim();
+                console.log("Считан код:", cleanValue);
+                
+                const found = products.find(p => p.govCode && p.govCode.trim() === cleanValue);
+                if (found) {
+                  setScannedProduct(found);
                 }
-              }}
+              }
+            }}
             />
+            
+            {/* Кнопка выхода поверх видео */}
             <button 
               onClick={() => setIsScannerOpen(false)}
-              className="mt-6 w-full py-3 bg-white text-black rounded-xl font-bold"
+              className="absolute bottom-10 px-8 py-4 bg-white/90 rounded-full font-bold shadow-lg"
             >
               Закрыть сканер
             </button>
-            <div className="text-white text-xs p-2 bg-red-900">
-              Проверка: если вы видите этот текст, значит компонент загружен. Если экран белый — проблема в доступе к камере.
-            </div>
           </div>
         </div>
       )}
