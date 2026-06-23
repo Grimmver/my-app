@@ -925,16 +925,48 @@ const handleQuantityChange = async (changeAmount) => {
               <button onClick={() => setIsScannerOpen(false)} className="...">Закрыть сканер</button>
             </div>
     ) : (
-        /* ЭКРАН 2: Если товар НАЙДЕН — показываем кнопки списания */
-      <div className="bg-white p-8 rounded-2xl w-full max-w-sm text-center z-[102]">
-        <h2 className="text-2xl font-bold mb-2">{scannedProduct.name}</h2>
-        <p className="text-slate-500 mb-6">Остаток: {scannedProduct.quantity} шт.</p>
-        <div className="grid grid-cols-2 gap-4">
-          <button onClick={() => handleQuantityChange(-1)} className="bg-red-500 text-white p-4 rounded-xl font-bold">-1</button>
-          <button onClick={() => handleQuantityChange(1)} className="bg-emerald-500 text-white p-4 rounded-xl font-bold">+1</button>
+        /* ЭКРАН 2: Интерфейс ввода количества */
+        <div className="bg-white p-8 rounded-2xl w-full max-w-sm text-center z-[102]">
+          <h2 className="text-xl font-bold mb-1">{scannedProduct.name}</h2>
+          <p className="text-slate-500 mb-6">На складе: {scannedProduct.quantity} шт.</p>
+          
+          {/* Поле ввода */}
+          <input 
+            type="number"
+            id="manualQuantity"
+            placeholder="Введите количество"
+            className="w-full p-4 border-2 border-slate-200 rounded-xl text-center text-lg font-bold mb-4 focus:border-indigo-500 focus:outline-none"
+          />
+
+          {/* Кнопки выбора действия */}
+          <div className="grid grid-cols-2 gap-4">
+            <button 
+              onClick={() => {
+                const val = parseInt(document.getElementById('manualQuantity').value) || 0;
+                handleQuantityChange(-val); // Списание
+              }}
+              className="bg-rose-500 text-white p-4 rounded-xl font-bold hover:bg-rose-600"
+            >
+              Списать (-)
+            </button>
+            <button 
+              onClick={() => {
+                const val = parseInt(document.getElementById('manualQuantity').value) || 0;
+                handleQuantityChange(val); // Приход
+              }}
+              className="bg-emerald-500 text-white p-4 rounded-xl font-bold hover:bg-emerald-600"
+            >
+              Приход (+)
+            </button>
+          </div>
+
+          <button 
+            onClick={() => { setScannedProduct(null); setLastScanned("..."); }} 
+            className="mt-6 text-slate-400 text-sm"
+          >
+            Отмена и назад к сканеру
+          </button>
         </div>
-        <button onClick={() => { setScannedProduct(null); setLastScanned("..."); }} className="mt-6 text-slate-400">Сбросить</button>
-      </div>
     )}
   </div>
 )}
