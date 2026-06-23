@@ -36,6 +36,7 @@ export default function App() {
   const [aiResponse, setAiResponse] = useState('');
 
   const [selectedProductForQR, setSelectedProductForQR] = useState(null);
+  const [lastScanned, setLastScanned] = useState("Наведите на код...");
   // --- Формы создания ---
   const [newProduct, setNewProduct] = useState({
     name: '',
@@ -894,23 +895,24 @@ const handleQuantityChange = async (changeAmount) => {
               height={"100%"} // Растягиваем на всю высоту
               videoConstraints={{ facingMode: "environment" }} // Всегда задняя камера
               onUpdate={(err, result) => {
-              if (result) {
-                const rawValue = result.getText ? result.getText() : result.text;
-                const cleanValue = rawValue.trim();
-                console.log("Считан код:", cleanValue);
-                
-                const found = products.find(p => p.govCode && p.govCode.trim() === cleanValue);
-                if (found) {
-                  setScannedProduct(found);
+                if (result) {
+                  const text = result.text.trim();
+                  setLastScanned(text); // Выводим то, что считали, на экран
+                  
+                  const found = products.find(p => p.govCode && p.govCode.trim() === text);
+                  if (found) {
+                    setScannedProduct(found);
+                  }
                 }
-              }
             }}
             />
-            
+            <div className="absolute top-20 bg-black/70 text-white p-4 rounded-lg z-[101]">
+              Последнее значение: {lastScanned}
+            </div>
             {/* Кнопка выхода поверх видео */}
             <button 
               onClick={() => setIsScannerOpen(false)}
-              className="absolute bottom-10 px-8 py-4 bg-white/90 rounded-full font-bold shadow-lg"
+              className="absolute bottom-10 px-8 py-4 bg-white/90 rounded-full font-bold shadow-lg z-[101]"
             >
               Закрыть сканер
             </button>
