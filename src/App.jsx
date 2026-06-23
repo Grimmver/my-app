@@ -417,7 +417,7 @@ const [scannedProduct, setScannedProduct] = useState(null);
 // 2. Функция обработки списания (без маржинальности)
 const handleQuantityChange = async (changeAmount) => {
   if (!scannedProduct) return;
-  
+
   const newQuantity = scannedProduct.quantity + changeAmount;
   
   try {
@@ -891,17 +891,17 @@ const handleQuantityChange = async (changeAmount) => {
             <QrReader
               onResult={(result, error) => {
                 if (result) {
-                  const scannedCode = result.text.trim();
-                  const found = products.find(p => p.govCode === scannedCode);
-                  if (found) {
-                    setScannedProduct(found);
-                  } else {
-                    showToast(`Товар с кодом ${scannedCode} не найден!`, 'error');
-                  }
+                  const found = products.find(p => p.govCode === result.text.trim());
+                  if (found) setScannedProduct(found);
+                }
+                if (error) {
+                  console.log("Ошибка сканера:", error); // Посмотрите в консоль браузера на телефоне
                 }
               }}
-              constraints={{ facingMode: 'environment' }} // Принудительно задняя камера
+              constraints={{ facingMode: 'environment' }}
               className="w-full rounded-2xl overflow-hidden"
+              // Добавим это для отладки, если библиотека поддерживает:
+              onError={(err) => alert("Ошибка камеры: " + err.message)}
             />
             <button 
               onClick={() => setIsScannerOpen(false)}
