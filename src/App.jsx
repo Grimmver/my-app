@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
+import { QRCodeCanvas } from 'qrcode.react';
 
 // Если вы запускаете локально, оставьте http://localhost:3000
 // При деплое на Render, замените на URL вашего веб-сервиса, например: https://my-sklad.onrender.com
@@ -33,6 +34,7 @@ export default function App() {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiResponse, setAiResponse] = useState('');
 
+  const [selectedProductForQR, setSelectedProductForQR] = useState(null);
   // --- Формы создания ---
   const [newProduct, setNewProduct] = useState({
     name: '',
@@ -406,6 +408,35 @@ export default function App() {
       return sortOrder === 'asc' ? aValue - bValue : bValue - aValue;
     }
   });
+  // --- ДОБАВИТЬ В APP.JSX ---
+
+// 1. Состояние для сканера
+const [isScannerOpen, setIsScannerOpen] = useState(false);
+const [scannedProduct, setScannedProduct] = useState(null);
+
+// 2. Функция обработки списания (без маржинальности)
+const handleQuantityChange = async (changeAmount) => {
+  if (!scannedProduct) return;
+  
+  const newQuantity = scannedProduct.quantity + changeAmount;
+  
+  try {
+    const res = await fetch(`${API_URL}/products/${scannedProduct.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': currentPassword },
+      body: JSON.stringify({ field: 'quantity', value: newQuantity })
+    });
+    
+    if (res.ok) {
+      showToast(`Товар "${scannedProduct.name}" изменен на ${changeAmount}`);
+      setIsScannerOpen(false);
+      setScannedProduct(null);
+      fetchData(); // Обновить таблицу
+    }
+  } catch (err) {
+    showToast('Ошибка обновления', 'error');
+  }
+};
 
   // Расчет общих финансовых показателей
   const stats = React.useMemo(() => {
@@ -465,7 +496,7 @@ export default function App() {
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 antialiased font-sans">
         <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-200 max-w-sm w-full space-y-6">
           <div className="text-center space-y-2">
-            <h2 className="text-2xl font-bold text-slate-900">Складской Учет Pro</h2>
+            <h2 className="text-2xl font-bold text-slate-900">Тайны Потока Складской учет</h2>
             <p className="text-xs text-slate-500">Вход в защищенную облачную базу данных</p>
           </div>
           <form onSubmit={handleLogin} className="space-y-4">
@@ -505,7 +536,7 @@ export default function App() {
               </svg>
             </div>
             <div>
-              <h1 className="text-xl font-bold text-slate-900 leading-tight">Складской Учет Pro</h1>
+              <h1 className="text-xl font-bold text-slate-900 leading-tight">Тайны Потока Складской учет</h1>
               <p className="text-xs text-slate-500">Синхронизированная база данных</p>
             </div>
           </div>
@@ -732,6 +763,15 @@ export default function App() {
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                         <button onClick={() => handleDeleteProduct(p.id, p.name)} className="text-rose-600 hover:text-rose-900 font-medium">Удалить</button>
                       </td>
+                      <button 
+                        onClick={() => setSelectedProductForQR(product)}
+                        className="p-1.5 text-slate-400 hover:text-indigo-600 transition-colors"
+                        title="Показать QR"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h3m-3 0H9m-3 0h3m2 6h4m0 0h2m-2 0v2m0-2v-2m0 0h2m-2 0H8m-2 0H4m4-4h2m-2 0H8m0 0v2m0 0H6m2 0h2m0 0V8m0 0H8m0 0h2m-2 0H6m0 0v2m0 0H4m16 0h-2m-2 0h-2m2 0V8m0 0h2m-2 0h-2m0 0v2m0 0h2m-2 0H8m-2 0H4" />
+                        </svg>
+                      </button>
                     </tr>
                   );
                 })}
@@ -832,6 +872,59 @@ export default function App() {
             <div className="flex justify-end">
               <button type="button" onClick={() => setIsAiModalOpen(false)} className="px-5 py-2 text-sm font-semibold bg-slate-100 hover:bg-slate-200 rounded-xl">Закрыть</button>
             </div>
+          </div>
+        </div>
+      )}
+      {isScannerOpen && (
+        <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center">
+          {!scannedProduct ? (
+            <QrReader
+              onResult={(result, error) => {
+                if (result) {
+                  const scannedCode = result.text.trim();
+                  // Ищем товар по Гос. Коду (govCode)
+                  const found = products.find(p => p.govCode === scannedCode);
+                  
+                  if (found) {
+                    setScannedProduct(found);
+                  } else {
+                    // Если товара нет, просто игнорируем или выдаем уведомление
+                    showToast(`Товар с кодом ${scannedCode} не найден в базе!`, 'error');
+                  }
+                }
+              }}
+              className="w-full max-w-sm"
+            />
+          ) : (
+            <div className="bg-white p-8 rounded-2xl w-full max-w-sm text-center">
+              <h2 className="text-xl font-bold">{scannedProduct.name}</h2>
+              <p className="text-slate-500 mb-6">Текущий остаток: {scannedProduct.quantity}</p>
+              <div className="grid grid-cols-2 gap-4">
+                <button onClick={() => handleQuantityChange(-1)} className="bg-red-500 text-white p-4 rounded-xl">-1</button>
+                <button onClick={() => handleQuantityChange(1)} className="bg-emerald-500 text-white p-4 rounded-xl">+1</button>
+              </div>
+              <button onClick={() => setIsScannerOpen(false)} className="mt-4 text-slate-400">Отмена</button>
+            </div>
+          )}
+        </div>
+      )}
+      {selectedProductForQR && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white p-6 rounded-2xl shadow-xl text-center">
+            <h3 className="font-bold text-lg mb-4">{selectedProductForQR.name}</h3>
+            <div className="bg-white p-2 border rounded-lg">
+              <QRCodeCanvas 
+                value={selectedProductForQR.govCode} 
+                size={200}
+              />
+            </div>
+            <p className="mt-4 text-sm text-slate-500">Код: {selectedProductForQR.govCode}</p>
+            <button 
+              onClick={() => setSelectedProductForQR(null)}
+              className="mt-6 w-full py-2 bg-slate-100 hover:bg-slate-200 rounded-lg font-semibold"
+            >
+              Закрыть
+            </button>
           </div>
         </div>
       )}
