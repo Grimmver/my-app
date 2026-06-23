@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 
 // Если вы запускаете локально, оставьте http://localhost:3000
 // При деплое на Render, замените на URL вашего веб-сервиса, например: https://my-sklad.onrender.com
@@ -199,6 +200,96 @@ export default function App() {
     } catch (err) {
       showToast('Ошибка изменения данных на сервере', 'error');
     }
+  };
+  // --- ДОБАВИТЬ ФУНКЦИИ В APP.JSX ---
+
+  // Функция 1: Экспорт текущей таблицы в файл Excel
+  const handleExportToExcel = () => {
+    if (products.length === 0) {
+      showToast('Нет данных для выгрузки', 'error');
+      return;
+    }
+
+    // Формируем понятную человеку таблицу на русском языке
+    const dataToExport = products.map(p => {
+      const cat = categories.find(c => c.id === p.categoryId);
+      return {
+        'Наименование товара': p.name,
+        'Внутренний код': p.internalCode,
+        'Гос. код товара': p.govCode,
+        'Категория': cat ? cat.name : 'Без категории',
+        'Остаток (шт)': p.quantity,
+        'Цена продажи (₸)': p.price,
+        'Себестоимость (₸)': p.cost,
+        'Ожидаемая прибыль (₸)': (p.price - p.cost) * p.quantity
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Складской учет');
+
+    // Автоматическое скачивание файла в браузер
+    const dateStr = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(workbook, `Otchet_Sklad_${dateStr}.xlsx`);
+    showToast('Файл Excel успешно сгенерирован и скачан');
+  };
+
+  // Функция 2: Импорт множества товаров из файла Excel
+  const handleImportFromExcel = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const binaryStr = evt.target.result;
+        const workbook = XLSX.read(binaryStr, { type: 'binary' });
+        
+        // Берем самый первый лист из файла Excel
+        const firstWorksheet = workbook.Sheets[workbook.SheetNames[0]];
+        // Превращаем строки Excel в удобный массив объектов
+        const rawRows = XLSX.utils.sheet_to_json(firstWorksheet);
+
+        // Маппим русские названия колонок обратно в ключи нашей базы данных
+        const formattedProducts = rawRows.map(row => ({
+          name: row['Наименование товара'] || row['name'] || row['Наименование'],
+          internalCode: String(row['Внутренний код'] || row['internalCode'] || '').trim(),
+          govCode: String(row['Гос. код товара'] || row['govCode'] || row['Гос. код'] || '').trim(),
+          quantity: Number(row['Остаток (шт)']) || Number(row['quantity']) || 0,
+          price: Number(row['Цена продажи (₸)']) || Number(row['price']) || 0,
+          cost: Number(row['Себестоимость (₸)']) || Number(row['cost']) || 0,
+          categoryId: "" // Новые товары по умолчанию будут "Без категории"
+        })).filter(p => p.name); // Пропускаем пустые строки, если нет имени
+
+        if (formattedProducts.length === 0) {
+          showToast('В файле не найдено подходящих товаров', 'error');
+          return;
+        }
+
+        // Отправляем массив на наш новый пакетный роут бэкенда
+        const res = await fetch(`${API_URL}/products/batch`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': currentPassword
+          },
+          body: JSON.stringify(formattedProducts)
+        });
+
+        if (res.ok) {
+          showToast(`Успешно импортировано ${formattedProducts.length} товаров из Excel!`);
+          fetchData(); // Обновляем данные на экране
+        } else {
+          showToast('Ошибка сохранения пакета на сервере', 'error');
+        }
+      } catch (err) {
+        showToast('Не удалось распознать структуру Excel файла', 'error');
+      }
+    };
+
+    reader.readAsBinaryString(file);
+    e.target.value = ''; // Сбрасываем значение инпута, чтобы можно было загрузить файл повторно
   };
 
   // Удаление товара из базы данных
@@ -411,6 +502,26 @@ export default function App() {
           </div>
           
           <div className="flex flex-wrap items-center gap-2">
+            {/* --- ДОБАВИТЬ В ВЕРСТКУ ШАПКИ (БЛОК КНОПОК) --- */}
+
+            {/* Кнопка экспорта */}
+            <button
+              onClick={handleExportToExcel}
+              className="px-4 py-2 text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-2"
+            >
+              📊 Экспорт Excel
+            </button>
+
+            {/* Скрытый нативный инпут и стилизованная под него кнопка импорта */}
+            <label className="px-4 py-2 text-sm font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer transition-colors flex items-center gap-2">
+              📥 Импорт Excel
+              <input 
+                type="file" 
+                accept=".xlsx, .xls, .csv" 
+                onChange={handleImportFromExcel} 
+                        className="hidden" 
+            />
+            </label>
             <button
               onClick={handleAiAnalysis}
               className="px-4 py-2 text-sm font-semibold text-fuchsia-700 bg-fuchsia-50 border border-fuchsia-200 rounded-lg hover:bg-fuchsia-100 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 transition-colors flex items-center gap-2"

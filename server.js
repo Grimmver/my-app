@@ -159,6 +159,40 @@ app.delete('/api/categories/:id', authenticate, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// --- ДОБАВИТЬ В SERVER.JS ---
+
+// API: Массовое добавление товаров из Excel (Batch Import)
+app.post('/api/products/batch', authenticate, async (req, res) => {
+  const products = req.body; // Ожидаем массив объектов
+  
+  if (!Array.isArray(products)) {
+    return res.status(400).json({ error: 'Ожидается массив товаров' });
+  }
+
+  try {
+    // Превращаем массив товаров в массив SQL-инструкций для Turso batch
+    const statements = products.map(p => ({
+      sql: `INSERT INTO products (id, name, internalCode, govCode, quantity, price, cost, categoryId) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        'prod-' + Math.floor(Math.random() * 1000000) + '-' + Date.now(), // уникальный id
+        p.name,
+        p.internalCode || 'INT-' + Math.floor(10000 + Math.random() * 90000),
+        p.govCode || 'GOV-' + Math.floor(10000000 + Math.random() * 90000000),
+        Number(p.quantity) || 0,
+        Number(p.price) || 0,
+        Number(p.cost) || 0,
+        p.categoryId || ""
+      ]
+    }));
+
+    // Выполняем всё одним пакетом в облаке
+    await db.batch(statements);
+    res.json({ success: true, count: products.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Раздача интерфейса React
 app.use(express.static(path.join(__dirname, 'dist')));
