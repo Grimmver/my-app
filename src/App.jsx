@@ -889,50 +889,55 @@ const handleQuantityChange = async (changeAmount) => {
       {/* МОДАЛЬНОЕ ОКНО: Сканер */}
       {isScannerOpen && (
         <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center">
-          <div className="relative w-full h-full flex flex-col items-center justify-center">
-            <BarcodeScanner
-              width={"100%"} // Растягиваем на всю ширину
-              height={"100%"} // Растягиваем на всю высоту
-              videoConstraints={{ facingMode: "environment" }} // Всегда задняя камера
-              onUpdate={(err, result) => {
-                if (result) {
-                  const scannedCode = result.text.trim();
-                  setLastScanned(scannedCode);
-                  
-                  // Включаем логирование в консоль, чтобы видеть это в F12 на ПК
-                  console.log("Сканер считал:", scannedCode);
-                  console.log("Список товаров (первые 3):", products.slice(0, 3).map(p => p.govCode));
+          {!scannedProduct ? (
+            <div className="relative w-full h-full flex flex-col items-center justify-center">
+              <BarcodeScanner
+                width={"100%"} // Растягиваем на всю ширину
+                height={"100%"} // Растягиваем на всю высоту
+                videoConstraints={{ facingMode: "environment" }} // Всегда задняя камера
+                onUpdate={(err, result) => {
+                  if (result) {
+                    const scannedCode = result.text.trim();
+                    setLastScanned(scannedCode);
+                    
+                    // Включаем логирование в консоль, чтобы видеть это в F12 на ПК
+                    console.log("Сканер считал:", scannedCode);
+                    console.log("Список товаров (первые 3):", products.slice(0, 3).map(p => p.govCode));
 
-                  // Ищем товар с принудительным приведением всего к строке и нижнему регистру
-                  const found = products.find(p => {
-                    const dbCode = String(p.govCode || '').trim();
-                    return dbCode.toLowerCase() === scannedCode.toLowerCase();
-                  });
+                    // Ищем товар с принудительным приведением всего к строке и нижнему регистру
+                    const found = products.find(p => {
+                      const dbCode = String(p.govCode || '').trim();
+                      return dbCode.toLowerCase() === scannedCode.toLowerCase();
+                    });
 
-                  if (found) {
-                    console.log("НАЙДЕН ТОВАР:", found.name);
-                    setScannedProduct(found);
-                  } else {
-                    console.log("Товар не найден в массиве products");
+                    if (found) {
+                      console.log("НАЙДЕН ТОВАР:", found.name);
+                      setScannedProduct(found);
+                    } else {
+                      console.log("Товар не найден в массиве products");
+                    }
                   }
-                }
-              }}
-            />
-            <div className="absolute top-20 bg-black/80 text-white p-4 rounded-lg z-[101] text-xs">
-              <div>Считано: {lastScanned}</div>
-              <div>Товаров в базе: {products.length}</div>
-              <div>Статус: {scannedProduct ? "НАЙДЕНО!" : "Ищем..."}</div>
+                }}
+              />
+              <div className="absolute top-20 bg-black/70 text-white p-4 rounded-lg z-[101]">
+                Считано: {lastScanned} | Статус: {scannedProduct ? "НАЙДЕНО!" : "Ищем..."}
+              </div>
+              <button onClick={() => setIsScannerOpen(false)} className="...">Закрыть сканер</button>
             </div>
-            {/* Кнопка выхода поверх видео */}
-            <button 
-              onClick={() => setIsScannerOpen(false)}
-              className="absolute bottom-10 px-8 py-4 bg-white/90 rounded-full font-bold shadow-lg z-[101]"
-            >
-              Закрыть сканер
-            </button>
-          </div>
+    ) : (
+        /* ЭКРАН 2: Если товар НАЙДЕН — показываем кнопки списания */
+      <div className="bg-white p-8 rounded-2xl w-full max-w-sm text-center z-[102]">
+        <h2 className="text-2xl font-bold mb-2">{scannedProduct.name}</h2>
+        <p className="text-slate-500 mb-6">Остаток: {scannedProduct.quantity} шт.</p>
+        <div className="grid grid-cols-2 gap-4">
+          <button onClick={() => handleQuantityChange(-1)} className="bg-red-500 text-white p-4 rounded-xl font-bold">-1</button>
+          <button onClick={() => handleQuantityChange(1)} className="bg-emerald-500 text-white p-4 rounded-xl font-bold">+1</button>
         </div>
-      )}
+        <button onClick={() => { setScannedProduct(null); setLastScanned("..."); }} className="mt-6 text-slate-400">Сбросить</button>
+      </div>
+    )}
+  </div>
+)}
       {selectedProductForQR && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white p-6 rounded-2xl shadow-xl text-center">
