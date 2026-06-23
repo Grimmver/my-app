@@ -163,30 +163,44 @@ app.delete('/api/categories/:id', authenticate, async (req, res) => {
 
 // API: Массовое добавление товаров из Excel (Batch Import)
 app.post('/api/products/batch', authenticate, async (req, res) => {
-  const products = req.body; // Ожидаем массив объектов
+  const products = req.body;
   
-  if (!Array.isArray(products)) {
-    return res.status(400).json({ error: 'Ожидается массив товаров' });
-  }
+  if (!Array.isArray(products)) return res.status(400).json({ error: 'Ожидается массив' });
 
   try {
-    // Превращаем массив товаров в массив SQL-инструкций для Turso batch
-    const statements = products.map(p => ({
-      sql: `INSERT INTO products (id, name, internalCode, govCode, quantity, price, cost, categoryId) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        'prod-' + Math.floor(Math.random() * 1000000) + '-' + Date.now(), // уникальный id
-        p.name,
-        p.internalCode || 'INT-' + Math.floor(10000 + Math.random() * 90000),
-        p.govCode || 'GOV-' + Math.floor(10000000 + Math.random() * 90000000),
-        Number(p.quantity) || 0,
-        Number(p.price) || 0,
-        Number(p.cost) || 0,
-        p.categoryId || ""
-      ]
-    }));
+    const statements = [];
 
-    // Выполняем всё одним пакетом в облаке
+    for (const p of products) {
+      // 1. Ищем товар в базе по иерархии: Гос.Код -> Наименование -> Внутренний код
+      let existing = null;
+      
+      const resGov = await db.execute({ sql: "SELECT * FROM products WHERE govCode = ?", args: [p.govCode] });
+      if (resGov.rows.length > 0) existing = resGov.rows[0];
+      
+      if (!existing) {
+        const resName = await db.execute({ sql: "SELECT * FROM products WHERE name = ?", args: [p.name] });
+        if (resName.rows.length > 0) existing = resName.rows[0];
+      }
+      
+      if (!existing && p.internalCode) {
+        const resInt = await db.execute({ sql: "SELECT * FROM products WHERE internalCode = ?", args: [p.internalCode] });
+        if (resInt.rows.length > 0) existing = resInt.rows[0];
+      }
+
+      // 2. Если нашли — обновляем, если нет — создаем новый
+      if (existing) {
+        statements.push({
+          sql: `UPDATE products SET quantity = ?, price = ?, cost = ?, categoryId = ? WHERE id = ?`,
+          args: [p.quantity, p.price, p.cost, p.categoryId, existing.id]
+        });
+      } else {
+        statements.push({
+          sql: `INSERT INTO products (id, name, internalCode, govCode, quantity, price, cost, categoryId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: ['prod-' + Math.random().toString(36).substr(2, 9), p.name, p.internalCode, p.govCode, p.quantity, p.price, p.cost, p.categoryId]
+        });
+      }
+    }
+
     await db.batch(statements);
     res.json({ success: true, count: products.length });
   } catch (err) {
