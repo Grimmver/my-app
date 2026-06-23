@@ -14,7 +14,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const SHARED_PASSWORD = "Ваш_Секретный_Пароль_123"; // Можете поменять на свой
+const SHARED_PASSWORD = "123"; // Можете поменять на свой
 
 // 3. База данных
 let db;
