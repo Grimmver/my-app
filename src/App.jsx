@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { QRCodeCanvas } from 'qrcode.react';
+import BarcodeScanner from 'react-qr-barcode-scanner';
 
 // Если вы запускаете локально, оставьте http://localhost:3000
 // При деплое на Render, замените на URL вашего веб-сервиса, например: https://my-sklad.onrender.com
@@ -889,19 +890,17 @@ const handleQuantityChange = async (changeAmount) => {
         <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center p-4">
           <div className="w-full max-w-sm">
             <BarcodeScanner
-              onResult={(result, error) => {
+              width={300}
+              height={300}
+              onUpdate={(err, result) => {
                 if (result) {
-                  const found = products.find(p => p.govCode === result.text.trim());
-                  if (found) setScannedProduct(found);
-                }
-                if (error) {
-                  console.log("Ошибка сканера:", error); // Посмотрите в консоль браузера на телефоне
+                  const scannedCode = result.text.trim();
+                  const found = products.find(p => p.govCode === scannedCode);
+                  if (found) {
+                    setScannedProduct(found);
+                  }
                 }
               }}
-              constraints={{ facingMode: 'environment' }}
-              className="w-full rounded-2xl overflow-hidden"
-              // Добавим это для отладки, если библиотека поддерживает:
-              onError={(err) => alert("Ошибка камеры: " + err.message)}
             />
             <button 
               onClick={() => setIsScannerOpen(false)}
