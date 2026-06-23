@@ -252,15 +252,24 @@ export default function App() {
         const rawRows = XLSX.utils.sheet_to_json(firstWorksheet);
 
         // Маппим русские названия колонок обратно в ключи нашей базы данных
-        const formattedProducts = rawRows.map(row => ({
-          name: row['Наименование товара'] || row['name'] || row['Наименование'],
-          internalCode: String(row['Внутренний код'] || row['internalCode'] || '').trim(),
-          govCode: String(row['Гос. код товара'] || row['govCode'] || row['Гос. код'] || '').trim(),
-          quantity: Number(row['Остаток (шт)']) || Number(row['quantity']) || 0,
-          price: Number(row['Цена продажи (₸)']) || Number(row['price']) || 0,
-          cost: Number(row['Себестоимость (₸)']) || Number(row['cost']) || 0,
-          categoryId: "" // Новые товары по умолчанию будут "Без категории"
-        })).filter(p => p.name); // Пропускаем пустые строки, если нет имени
+        const formattedProducts = rawRows.map(row => {
+          // Получаем имя категории из Excel
+          const categoryName = String(row['Категория'] || row['category'] || "").trim();
+          
+          // Ищем ID существующей категории, имя которой совпадает с текстом из Excel
+          const foundCategory = categories.find(c => c.name.trim() === categoryName);
+          
+          return {
+            name: String(row['Наименование товара'] || row['name'] || row['Наименование'] || '').trim(),
+            internalCode: String(row['Внутренний код'] || row['internalCode'] || '').trim(),
+            govCode: String(row['Гос. код товара'] || row['govCode'] || row['Гос. код'] || '').trim(),
+            quantity: Number(row['Остаток (шт)']) || Number(row['quantity']) || 0,
+            price: Number(row['Цена продажи (₸)']) || Number(row['price']) || 0,
+            cost: Number(row['Себестоимость (₸)']) || Number(row['cost']) || 0,
+            // Если нашли категорию по имени — берем её ID, иначе пустая строка
+            categoryId: foundCategory ? foundCategory.id : ""
+          };
+        }).filter(p => p.name); // Пропускаем пустые строки, если нет имени
 
         if (formattedProducts.length === 0) {
           showToast('В файле не найдено подходящих товаров', 'error');
