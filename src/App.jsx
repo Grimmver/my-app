@@ -584,6 +584,12 @@ const handleQuantityChange = async (changeAmount) => {
               Добавить товар
             </button>
             <button
+              onClick={() => setIsScannerOpen(true)}
+              className="px-4 py-2 text-sm font-semibold text-white bg-slate-800 rounded-lg hover:bg-slate-900 transition-colors flex items-center gap-2"
+            >
+              📷 Сканер
+            </button>
+            <button
               onClick={handleLogout}
               className="px-3 py-2 text-sm font-semibold text-slate-500 hover:text-rose-600 border border-slate-300 bg-white rounded-lg hover:bg-rose-50 transition-colors"
             >
@@ -674,6 +680,7 @@ const handleQuantityChange = async (changeAmount) => {
                   <th onClick={() => requestSort('cost')} className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Себестоимость {sortBy === 'cost' && (sortOrder === 'asc' ? '▲' : '▼')}</th>
                   <th onClick={() => requestSort('profitability')} className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Доходность {sortBy === 'profitability' && (sortOrder === 'asc' ? '▲' : '▼')}</th>
                   <th className="relative px-6 py-3.5"><span className="sr-only">Действия</span></th>
+                  <th className="relative px-6 py-3.5"><span className="sr-only">QR</span></th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-200">
@@ -763,8 +770,9 @@ const handleQuantityChange = async (changeAmount) => {
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                         <button onClick={() => handleDeleteProduct(p.id, p.name)} className="text-rose-600 hover:text-rose-900 font-medium">Удалить</button>
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                       <button 
-                        onClick={() => setSelectedProductForQR(product)}
+                        onClick={() => setSelectedProductForQR(p)}
                         className="p-1.5 text-slate-400 hover:text-indigo-600 transition-colors"
                         title="Показать QR"
                       >
@@ -772,6 +780,7 @@ const handleQuantityChange = async (changeAmount) => {
                           <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h3m-3 0H9m-3 0h3m2 6h4m0 0h2m-2 0v2m0-2v-2m0 0h2m-2 0H8m-2 0H4m4-4h2m-2 0H8m0 0v2m0 0H6m2 0h2m0 0V8m0 0H8m0 0h2m-2 0H6m0 0v2m0 0H4m16 0h-2m-2 0h-2m2 0V8m0 0h2m-2 0h-2m0 0v2m0 0h2m-2 0H8m-2 0H4" />
                         </svg>
                       </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -875,37 +884,32 @@ const handleQuantityChange = async (changeAmount) => {
           </div>
         </div>
       )}
+      {/* МОДАЛЬНОЕ ОКНО: Сканер */}
       {isScannerOpen && (
-        <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center">
-          {!scannedProduct ? (
+        <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center p-4">
+          <div className="w-full max-w-sm">
             <QrReader
               onResult={(result, error) => {
                 if (result) {
                   const scannedCode = result.text.trim();
-                  // Ищем товар по Гос. Коду (govCode)
                   const found = products.find(p => p.govCode === scannedCode);
-                  
                   if (found) {
                     setScannedProduct(found);
                   } else {
-                    // Если товара нет, просто игнорируем или выдаем уведомление
-                    showToast(`Товар с кодом ${scannedCode} не найден в базе!`, 'error');
+                    showToast(`Товар с кодом ${scannedCode} не найден!`, 'error');
                   }
                 }
               }}
-              className="w-full max-w-sm"
+              constraints={{ facingMode: 'environment' }} // Принудительно задняя камера
+              className="w-full rounded-2xl overflow-hidden"
             />
-          ) : (
-            <div className="bg-white p-8 rounded-2xl w-full max-w-sm text-center">
-              <h2 className="text-xl font-bold">{scannedProduct.name}</h2>
-              <p className="text-slate-500 mb-6">Текущий остаток: {scannedProduct.quantity}</p>
-              <div className="grid grid-cols-2 gap-4">
-                <button onClick={() => handleQuantityChange(-1)} className="bg-red-500 text-white p-4 rounded-xl">-1</button>
-                <button onClick={() => handleQuantityChange(1)} className="bg-emerald-500 text-white p-4 rounded-xl">+1</button>
-              </div>
-              <button onClick={() => setIsScannerOpen(false)} className="mt-4 text-slate-400">Отмена</button>
-            </div>
-          )}
+            <button 
+              onClick={() => setIsScannerOpen(false)}
+              className="mt-6 w-full py-3 bg-white text-black rounded-xl font-bold"
+            >
+              Закрыть сканер
+            </button>
+          </div>
         </div>
       )}
       {selectedProductForQR && (
