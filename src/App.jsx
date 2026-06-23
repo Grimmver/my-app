@@ -896,15 +896,27 @@ const handleQuantityChange = async (changeAmount) => {
               videoConstraints={{ facingMode: "environment" }} // Всегда задняя камера
               onUpdate={(err, result) => {
                 if (result) {
-                  const text = result.text.trim();
-                  setLastScanned(text); // Выводим то, что считали, на экран
+                  const scannedCode = result.text.trim();
+                  setLastScanned(scannedCode);
                   
-                  const found = products.find(p => p.govCode && p.govCode.trim() === text);
+                  // Включаем логирование в консоль, чтобы видеть это в F12 на ПК
+                  console.log("Сканер считал:", scannedCode);
+                  console.log("Список товаров (первые 3):", products.slice(0, 3).map(p => p.govCode));
+
+                  // Ищем товар с принудительным приведением всего к строке и нижнему регистру
+                  const found = products.find(p => {
+                    const dbCode = String(p.govCode || '').trim();
+                    return dbCode.toLowerCase() === scannedCode.toLowerCase();
+                  });
+
                   if (found) {
+                    console.log("НАЙДЕН ТОВАР:", found.name);
                     setScannedProduct(found);
+                  } else {
+                    console.log("Товар не найден в массиве products");
                   }
                 }
-            }}
+              }}
             />
             <div className="absolute top-20 bg-black/70 text-white p-4 rounded-lg z-[101]">
               Последнее значение: {lastScanned}
