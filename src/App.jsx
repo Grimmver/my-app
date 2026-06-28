@@ -692,7 +692,58 @@ const handleQuantityChange = async (changeAmount) => {
                   return (
                     <tr key={p.id} className="hover:bg-slate-50 group">
                       <td className="px-6 py-4 whitespace-nowrap"><div className="font-semibold text-slate-900">{p.name}</div></td>
-                      <td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-500"><div>{p.internalCode}</div><div className="text-[10px] text-slate-400">{p.govCode}</div></td>
+                      {/* Столбец Кодов с быстрым редактированием */}
+<td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-500">
+  <div className="flex flex-col gap-1.5">
+    
+    {/* 1. Редактирование Внутреннего кода */}
+    {inlineEditState.productId === p.id && inlineEditState.field === 'internalCode' ? (
+      <div className="flex items-center gap-1">
+        <input 
+          type="text" 
+          value={inlineEditState.value} 
+          onChange={(e) => setInlineEditState({ ...inlineEditState, value: e.target.value })} 
+          className="w-28 border border-indigo-500 rounded p-1 text-xs" 
+        />
+        <button onClick={() => handleInlineSave(p.id, 'internalCode')} className="p-1 bg-emerald-500 text-white rounded text-[10px]">✓</button>
+      </div>
+    ) : (
+      <div className="flex items-center space-x-1.5 group/code">
+        <span className="font-semibold text-slate-600">{p.internalCode || 'Нет кода'}</span>
+        <button 
+          onClick={() => setInlineEditState({ productId: p.id, field: 'internalCode', value: p.internalCode || '' })} 
+          className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover/code:opacity-100 text-[10px]"
+        >
+          ✏️
+        </button>
+      </div>
+    )}
+
+    {/* 2. Редактирование Гос. кода */}
+    {inlineEditState.productId === p.id && inlineEditState.field === 'govCode' ? (
+      <div className="flex items-center gap-1">
+        <input 
+          type="text" 
+          value={inlineEditState.value} 
+          onChange={(e) => setInlineEditState({ ...inlineEditState, value: e.target.value })} 
+          className="w-28 border border-indigo-500 rounded p-1 text-[10px]" 
+        />
+        <button onClick={() => handleInlineSave(p.id, 'govCode')} className="p-1 bg-emerald-500 text-white rounded text-[10px]">✓</button>
+      </div>
+    ) : (
+      <div className="flex items-center space-x-1.5 group/gov">
+        <span className="text-[10px] text-slate-400">{p.govCode || 'Нет гос. кода'}</span>
+        <button 
+          onClick={() => setInlineEditState({ productId: p.id, field: 'govCode', value: p.govCode || '' })} 
+          className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover/gov:opacity-100 text-[9px]"
+        >
+          ✏️
+        </button>
+      </div>
+    )}
+
+  </div>
+</td>
                       
                       {/* Категория с быстрым редактированием */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm">

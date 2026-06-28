@@ -103,7 +103,7 @@ app.put('/api/products/:id', authenticate, async (req, res) => {
   const { field, value } = req.body;
   
   // Безопасная проверка разрешенных полей для защиты от SQL-инъекций
-  const allowedFields = ['quantity', 'price', 'cost', 'categoryId'];
+  const allowedFields = ['name', 'quantity', 'price', 'cost', 'categoryId', 'internalCode', 'govCode'];
   if (!allowedFields.includes(field)) {
     return res.status(400).json({ error: 'Недопустимое поле' });
   }
