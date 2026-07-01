@@ -176,14 +176,20 @@ export default function App() {
 
   // Быстрое редактирование любого параметра прямо в таблице
   const handleInlineSave = async (productId, field) => {
-    let finalValue = inlineEditState.value;
+    let rawValue = inlineEditState.value;
+    if (typeof rawValue === 'string') {
+      rawValue = rawValue.trim();
+    }
+    let finalValue;
 
-    if (field !== 'categoryId') {
-      finalValue = Number(finalValue);
+    if (field === 'quantity' || field === 'price' || field === 'cost') {
+      finalValue = Number(rawValue) || 0;
       if (isNaN(finalValue) || finalValue < 0) {
         showToast('Введите корректное число', 'error');
         return;
       }
+    } else {
+      finalValue = String(rawValue);
     }
 
     try {
@@ -200,6 +206,9 @@ export default function App() {
         setInlineEditState({ productId: null, field: null, value: '' });
         showToast('Данные успешно сохранены на сервере');
         fetchData();
+      } else {
+        const errData = await res.json();
+        showToast(errData.error || 'Ошибка при сохранении', 'error');
       }
     } catch (err) {
       showToast('Ошибка изменения данных на сервере', 'error');
@@ -711,7 +720,7 @@ const handleQuantityChange = async (changeAmount) => {
       <div className="flex items-center space-x-1.5 group/code">
         <span className="font-semibold text-slate-600">{p.internalCode || 'Нет кода'}</span>
         <button 
-          onClick={() => setInlineEditState({ productId: p.id, field: 'internalCode', value: p.internalCode || '' })} 
+          onClick={() => setInlineEditState({ productId: p.id, field: 'internalCode', value: String(p.internalCode || '') })} 
           className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover/code:opacity-100 text-[10px]"
         >
           ✏️
@@ -734,7 +743,7 @@ const handleQuantityChange = async (changeAmount) => {
       <div className="flex items-center space-x-1.5 group/gov">
         <span className="text-[10px] text-slate-400">{p.govCode || 'Нет гос. кода'}</span>
         <button 
-          onClick={() => setInlineEditState({ productId: p.id, field: 'govCode', value: p.govCode || '' })} 
+          onClick={() => setInlineEditState({ productId: p.id, field: 'govCode', value: String(p.govCode || '') })} 
           className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover/gov:opacity-100 text-[9px]"
         >
           ✏️
