@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { QRCodeCanvas } from 'qrcode.react';
-import BarcodeScanner from 'react-qr-barcode-scanner';
+import { BarcodeScanner } from '@capacitor-mlkit/barcode-scanning';;
 
 // Если вы запускаете локально, оставьте http://localhost:3000
 // При деплое на Render, замените на URL вашего веб-сервиса, например: https://my-sklad.onrender.com
@@ -1154,7 +1154,57 @@ export default function App() {
                   </div>
                 </div>
               </div>
+              {/* Блок прямой продажи из карточки */}
+              <div className="bg-indigo-50/50 p-5 rounded-2xl border border-indigo-100 space-y-3">
+                <h3 className="text-xs font-bold text-indigo-600 uppercase tracking-widest">Быстрая продажа</h3>
+                <div className="flex items-center gap-3">
+                  <input 
+                    type="number" 
+                    id={`sell-input-${selectedProductDetails.id}`} 
+                    defaultValue="1" 
+                    min="1"
+                    className="w-24 px-3 py-2.5 bg-white border border-indigo-200 rounded-xl text-center font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    onClick={async () => {
+                      const inputEl = document.getElementById(`sell-input-${selectedProductDetails.id}`);
+                      const qtyToSell = parseInt(inputEl.value) || 0;
+                      
+                      if (qtyToSell <= 0) {
+                        showToast('Введите корректное количество', 'error');
+                        return;
+                      }
 
+                      if (qtyToSell > selectedProductDetails.quantity) {
+                        showToast('На складе нет столько товара!', 'error');
+                        return;
+                      }
+
+                      // Вызываем функцию продажи
+                      try {
+                        const res = await fetch(`${API_URL}/products/${selectedProductDetails.id}/sell`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', 'Authorization': currentPassword },
+                          body: JSON.stringify({ quantityToSell: qtyToSell })
+                        });
+                        
+                        if (res.ok) {
+                          showToast(`Успешно продано ${qtyToSell} шт.`, 'success');
+                          fetchData(); // Обновляем данные
+                          setSelectedProductDetails(null); // Закрываем карточку
+                        } else {
+                          showToast('Ошибка при продаже', 'error');
+                        }
+                      } catch (err) {
+                        showToast('Ошибка сети', 'error');
+                      }
+                    }}
+                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition-colors text-sm flex items-center justify-center gap-2"
+                  >
+                    <span>💳 Продать со склада</span>
+                  </button>
+                </div>
+              </div>
               {/* Блок: Коды и кнопка QR (перенесенная из таблицы) */}
               <div className="flex justify-between items-center bg-slate-50 px-5 py-4 rounded-2xl border border-slate-200">
                 <div>
@@ -1180,61 +1230,77 @@ export default function App() {
         </div>
       )}
 
-      {/* МОДАЛЬНОЕ ОКНО: Сканер */}
+      {/* МОДАЛЬНОЕ ОКНО: Нативный сканер */}
       {isScannerOpen && (
         <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center">
           {!scannedProduct ? (
-            <div className="relative w-full h-full flex flex-col items-center justify-center">
-              <BarcodeScanner
-                width={"100%"} // Растягиваем на всю ширину
-                height={"100%"} // Растягиваем на всю высоту
-                videoConstraints={{ facingMode: "environment" }} // Всегда задняя камера
-                onUpdate={(err, result) => {
-                  if (result) {
-                    const scannedCode = result.text.trim();
-                    setLastScanned(scannedCode);
-                    
-                    // Включаем логирование в консоль
-                    console.log("Сканер считал:", scannedCode);
-
-                    // Ищем товар с принудительным приведением всего к строке и нижнему регистру
-                    const found = products.find(p => {
-                      const dbCode = String(p.govCode || '').trim();
-                      return dbCode.toLowerCase() === scannedCode.toLowerCase();
-                    });
-
-                    if (found) {
-                      console.log("НАЙДЕН ТОВАР:", found.name);
-                      setScannedProduct(found);
+            <div className="relative w-full h-full flex flex-col items-center justify-center bg-black">
+              {/* Кнопка запуска сканирования через Capacitor MLKit */}
+              <div className="text-center p-6 space-y-4">
+                <div className="text-white text-lg font-bold">Наведите камеру на штрих-код</div>
+                <button 
+                  onClick={async () => {
+                    // Запрашиваем разрешение и запускаем сканирование
+                    const status = await BarcodeScanner.requestPermissions();
+                    if (status.camera !== 'granted') {
+                      showToast('Нет доступа к камере', 'error');
+                      return;
                     }
-                  }
-                }}
-              />
-              <div className="absolute top-20 bg-black/70 text-white p-4 rounded-lg z-[101]">
-                Считано: {lastScanned} | Статус: {scannedProduct ? "НАЙДЕНО!" : "Ищем..."}
+                    
+                    // Прячем интерфейс приложения, чтобы камера сработала нативно
+                    document.querySelector('body').classList.add('scanner-active');
+                    
+                    try {
+                      const result = await BarcodeScanner.scan();
+                      document.querySelector('body').classList.remove('scanner-active');
+                      
+                      if (result.barcodes && result.barcodes.length > 0) {
+                        const scannedCode = result.barcodes[0].displayValue.trim();
+                        setLastScanned(scannedCode);
+
+                        const found = products.find(p => {
+                          const dbCode = String(p.govCode || '').trim();
+                          return dbCode.toLowerCase() === scannedCode.toLowerCase();
+                        });
+
+                        if (found) {
+                          setScannedProduct(found);
+                        } else {
+                          showToast(`Товар с кодом "${scannedCode}" не найден`, 'error');
+                        }
+                      }
+                    } catch (e) {
+                      document.querySelector('body').classList.remove('scanner-active');
+                      setIsScannerOpen(false);
+                    }
+                  }}
+                  className="px-8 py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-lg hover:bg-indigo-700 transition-all text-lg"
+                >
+                  Включить камеру
+                </button>
               </div>
+
               <button 
                 onClick={() => setIsScannerOpen(false)} 
-                className="absolute bottom-10 px-8 py-4 bg-white/90 text-slate-900 rounded-full font-bold shadow-lg z-[101]"
+                className="absolute bottom-10 px-8 py-3 bg-white/20 text-white rounded-full font-bold backdrop-blur-md"
               >
                 Закрыть сканер
               </button>
             </div>
           ) : (
-            /* ЭКРАН 2: Интерфейс ввода количества (Списание/Приход) */
+            /* Экран ввода количества после успешного сканирования */
             <div className="bg-white p-8 rounded-2xl w-full max-w-sm text-center z-[102]">
               <h2 className="text-xl font-bold mb-1">{scannedProduct.name}</h2>
               <p className="text-slate-500 mb-6">На складе: {scannedProduct.quantity} шт.</p>
               
-              {/* Поле ввода */}
               <input 
                 type="number"
                 id="manualQuantity"
                 placeholder="Введите количество"
+                defaultValue="1"
                 className="w-full p-4 border-2 border-slate-200 rounded-xl text-center text-lg font-bold mb-4 focus:border-indigo-500 focus:outline-none"
               />
 
-              {/* Кнопки выбора действия */}
               <div className="grid grid-cols-2 gap-4">
                 <button 
                   onClick={() => {
@@ -1248,7 +1314,7 @@ export default function App() {
                 <button 
                   onClick={() => {
                     const val = parseInt(document.getElementById('manualQuantity').value) || 0;
-                    if (val > 0) handleQuantityChange(val); // Приход
+                    if (val > 0) handleQuantityChange(val);
                   }}
                   className="bg-emerald-500 text-white p-4 rounded-xl font-bold hover:bg-emerald-600"
                 >
@@ -1260,7 +1326,7 @@ export default function App() {
                 onClick={() => { setScannedProduct(null); setLastScanned("..."); }} 
                 className="mt-6 text-slate-400 text-sm font-medium hover:text-slate-600"
               >
-                Отмена и назад к сканеру
+                Отмена и назад
               </button>
             </div>
           )}
