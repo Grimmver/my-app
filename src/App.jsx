@@ -40,6 +40,7 @@ export default function App() {
   const [selectedProductForQR, setSelectedProductForQR] = useState(null);
   const [lastScanned, setLastScanned] = useState("Наведите на код...");
   const [selectedProductDetails, setSelectedProductDetails] = useState(null);
+  
   // --- Формы создания ---
   const [newProduct, setNewProduct] = useState({
     name: '',
@@ -55,7 +56,7 @@ export default function App() {
   // --- Быстрое инлайн-редактирование ---
   const [inlineEditState, setInlineEditState] = useState({
     productId: null,
-    field: null, // 'quantity' | 'price' | 'cost' | 'categoryId'
+    field: null, // 'quantity' | 'price' | 'cost' | 'categoryId' | 'internalCode' | 'govCode'
     value: ''
   });
 
@@ -217,7 +218,6 @@ export default function App() {
       showToast('Ошибка изменения данных на сервере', 'error');
     }
   };
-  // --- ДОБАВИТЬ ФУНКЦИИ В APP.JSX ---
 
   // Функция 1: Экспорт текущей таблицы в файл Excel
   const handleExportToExcel = () => {
@@ -334,7 +334,6 @@ export default function App() {
       }
     }
   };
-// --- ДОБАВИТЬ ФУНКЦИИ В APP.JSX ---
 
   const handleAddCategory = async (e) => {
     e.preventDefault();
@@ -381,6 +380,7 @@ export default function App() {
       showToast('Ошибка удаления', 'error');
     }
   };
+
   // Обработка клика по заголовку таблицы для сортировки
   const requestSort = (key) => {
     let direction = 'asc';
@@ -422,54 +422,56 @@ export default function App() {
       return sortOrder === 'asc' ? aValue - bValue : bValue - aValue;
     }
   });
-  // --- ДОБАВИТЬ В APP.JSX ---
 
-// 1. Состояние для сканера
-const [isScannerOpen, setIsScannerOpen] = useState(false);
-const [scannedProduct, setScannedProduct] = useState(null);
+  // 1. Состояние для сканера
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannedProduct, setScannedProduct] = useState(null);
 
-// 2. Функция обработки списания (без маржинальности)
-const handleQuantityChange = async (changeAmount) => {
-  if (!scannedProduct) return;
+  // 2. Функция обработки списания/прихода (без маржинальности)
+  const handleQuantityChange = async (changeAmount) => {
+    if (!scannedProduct) return;
 
-  const newQuantity = scannedProduct.quantity + changeAmount;
-  
-  try {
-    const res = await fetch(`${API_URL}/products/${scannedProduct.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': currentPassword },
-      body: JSON.stringify({ field: 'quantity', value: newQuantity })
-    });
+    const newQuantity = scannedProduct.quantity + changeAmount;
     
-    if (res.ok) {
-      showToast(`Товар "${scannedProduct.name}" изменен на ${changeAmount}`);
-      setIsScannerOpen(false);
-      setScannedProduct(null);
-      fetchData(); // Обновить таблицу
+    try {
+      const res = await fetch(`${API_URL}/products/${scannedProduct.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': currentPassword },
+        body: JSON.stringify({ field: 'quantity', value: newQuantity })
+      });
+      
+      if (res.ok) {
+        showToast(`Товар "${scannedProduct.name}" изменен на ${changeAmount}`);
+        setIsScannerOpen(false);
+        setScannedProduct(null);
+        fetchData(); // Обновить таблицу
+      }
+    } catch (err) {
+      showToast('Ошибка обновления', 'error');
     }
-  } catch (err) {
-    showToast('Ошибка обновления', 'error');
-  }
-};
-const handleSellProduct = async (quantityToSell) => {
-  try {
-    const res = await fetch(`${API_URL}/products/${scannedProduct.id}/sell`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': currentPassword },
-      body: JSON.stringify({ quantityToSell })
-    });
-    if (res.ok) {
-      showToast(`Успешно продано ${quantityToSell} шт.`, 'success');
-      fetchData(); // Обновляем данные на экране
-      setScannedProduct(null); // Возвращаемся к камере
-      setLastScanned("...");
-    } else {
-      showToast('Ошибка при продаже', 'error');
+  };
+
+  // 3. Функция реальной продажи
+  const handleSellProduct = async (quantityToSell) => {
+    try {
+      const res = await fetch(`${API_URL}/products/${scannedProduct.id}/sell`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': currentPassword },
+        body: JSON.stringify({ quantityToSell })
+      });
+      if (res.ok) {
+        showToast(`Успешно продано ${quantityToSell} шт.`, 'success');
+        fetchData(); // Обновляем данные на экране
+        setScannedProduct(null); // Возвращаемся к камере
+        setLastScanned("...");
+      } else {
+        showToast('Ошибка при продаже', 'error');
+      }
+    } catch(err) {
+      showToast('Ошибка сети', 'error');
     }
-  } catch(err) {
-    showToast('Ошибка сети', 'error');
-  }
-};
+  };
+
   // Расчет общих финансовых показателей
   const stats = React.useMemo(() => {
     let totalQty = 0;
@@ -521,6 +523,7 @@ const handleSellProduct = async (quantityToSell) => {
       setIsAiLoading(false);
     }
   };
+
   const fieldTranslations = {
     name: 'Наименование',
     quantity: 'Количество',
@@ -530,6 +533,7 @@ const handleSellProduct = async (quantityToSell) => {
     internalCode: 'Внутренний код',
     govCode: 'Гос. код'
   };
+
   const fetchHistory = async () => {
     try {
       const res = await fetch(`${API_URL}/history`, {
@@ -543,6 +547,7 @@ const handleSellProduct = async (quantityToSell) => {
       showToast('Ошибка при загрузке истории', 'error');
     }
   };
+
   const handleExportHistory = async (limit = null) => {
     try {
       // Формируем URL с лимитом или без него
@@ -648,9 +653,6 @@ const handleSellProduct = async (quantityToSell) => {
           </div>
           
           <div className="flex flex-wrap items-center gap-2">
-            {/* --- ДОБАВИТЬ В ВЕРСТКУ ШАПКИ (БЛОК КНОПОК) --- */}
-
-            {/* Кнопка экспорта */}
             <button
               onClick={handleExportToExcel}
               className="px-4 py-2 text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-2"
@@ -658,16 +660,16 @@ const handleSellProduct = async (quantityToSell) => {
               📊 Экспорт Excel
             </button>
 
-            {/* Скрытый нативный инпут и стилизованная под него кнопка импорта */}
             <label className="px-4 py-2 text-sm font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer transition-colors flex items-center gap-2">
               📥 Импорт Excel
               <input 
                 type="file" 
                 accept=".xlsx, .xls, .csv" 
                 onChange={handleImportFromExcel} 
-                        className="hidden" 
-            />
+                className="hidden" 
+              />
             </label>
+
             <button
               onClick={handleAiAnalysis}
               className="px-4 py-2 text-sm font-semibold text-fuchsia-700 bg-fuchsia-50 border border-fuchsia-200 rounded-lg hover:bg-fuchsia-100 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 transition-colors flex items-center gap-2"
@@ -677,30 +679,35 @@ const handleSellProduct = async (quantityToSell) => {
               </svg>
               AI-Аналитик
             </button>
+
             <button
               onClick={() => setIsManageCategoriesOpen(true)}
               className="px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors flex items-center gap-2"
             >
               Категории ({categories.length})
             </button>
+
             <button
               onClick={() => setIsAddProductOpen(true)}
               className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-md transition-colors flex items-center gap-2"
             >
               Добавить товар
             </button>
+
             <button
               onClick={() => setIsScannerOpen(true)}
               className="px-4 py-2 text-sm font-semibold text-white bg-slate-800 rounded-lg hover:bg-slate-900 transition-colors flex items-center gap-2"
             >
               📷 Сканер
             </button>
+
             <button
               onClick={() => { fetchHistory(); setIsHistoryOpen(true); }}
               className="px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2"
             >
               📜 История
             </button>
+
             <button
               onClick={handleLogout}
               className="px-3 py-2 text-sm font-semibold text-slate-500 hover:text-rose-600 border border-slate-300 bg-white rounded-lg hover:bg-rose-50 transition-colors"
@@ -796,7 +803,6 @@ const handleSellProduct = async (quantityToSell) => {
               <tbody className="bg-white divide-y divide-slate-200">
                 {sortedProducts.map((p) => {
                   const cat = categories.find(c => c.id === p.categoryId);
-                  const { profit, marginPercent } = getProfitMetrics(p.price, p.cost);
                   return (
                     <tr key={p.id} className="hover:bg-slate-50 group">
                       <td className="px-6 py-4 whitespace-normal break-words min-w-[250px] max-w-[350px]">
@@ -808,58 +814,57 @@ const handleSellProduct = async (quantityToSell) => {
                           {p.name}
                         </div>
                       </td>
+                      
                       {/* Столбец Кодов с быстрым редактированием */}
-<td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-500">
-  <div className="flex flex-col gap-1.5">
-    
-    {/* 1. Редактирование Внутреннего кода */}
-    {inlineEditState.productId === p.id && inlineEditState.field === 'internalCode' ? (
-      <div className="flex items-center gap-1">
-        <input 
-          type="text" 
-          value={inlineEditState.value} 
-          onChange={(e) => setInlineEditState({ ...inlineEditState, value: e.target.value })} 
-          className="w-28 border border-indigo-500 rounded p-1 text-xs" 
-        />
-        <button onClick={() => handleInlineSave(p.id, 'internalCode')} className="p-1 bg-emerald-500 text-white rounded text-[10px]">✓</button>
-      </div>
-    ) : (
-      <div className="flex items-center space-x-1.5 group/code">
-        <span className="font-semibold text-slate-600">{p.internalCode || 'Нет кода'}</span>
-        <button 
-          onClick={() => setInlineEditState({ productId: p.id, field: 'internalCode', value: String(p.internalCode || '') })} 
-          className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover/code:opacity-100 text-[10px]"
-        >
-          ✏️
-        </button>
-      </div>
-    )}
+                      <td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-500">
+                        <div className="flex flex-col gap-1.5">
+                          {/* 1. Редактирование Внутреннего кода */}
+                          {inlineEditState.productId === p.id && inlineEditState.field === 'internalCode' ? (
+                            <div className="flex items-center gap-1">
+                              <input 
+                                type="text" 
+                                value={inlineEditState.value} 
+                                onChange={(e) => setInlineEditState({ ...inlineEditState, value: e.target.value })} 
+                                className="w-28 border border-indigo-500 rounded p-1 text-xs" 
+                              />
+                              <button onClick={() => handleInlineSave(p.id, 'internalCode')} className="p-1 bg-emerald-500 text-white rounded text-[10px]">✓</button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center space-x-1.5 group/code">
+                              <span className="font-semibold text-slate-600">{p.internalCode || 'Нет кода'}</span>
+                              <button 
+                                onClick={() => setInlineEditState({ productId: p.id, field: 'internalCode', value: String(p.internalCode || '') })} 
+                                className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover/code:opacity-100 text-[10px]"
+                              >
+                                ✏️
+                              </button>
+                            </div>
+                          )}
 
-    {/* 2. Редактирование Гос. кода */}
-    {inlineEditState.productId === p.id && inlineEditState.field === 'govCode' ? (
-      <div className="flex items-center gap-1">
-        <input 
-          type="text" 
-          value={inlineEditState.value} 
-          onChange={(e) => setInlineEditState({ ...inlineEditState, value: e.target.value })} 
-          className="w-28 border border-indigo-500 rounded p-1 text-[10px]" 
-        />
-        <button onClick={() => handleInlineSave(p.id, 'govCode')} className="p-1 bg-emerald-500 text-white rounded text-[10px]">✓</button>
-      </div>
-    ) : (
-      <div className="flex items-center space-x-1.5 group/gov">
-        <span className="text-[10px] text-slate-400">{p.govCode || 'Нет гос. кода'}</span>
-        <button 
-          onClick={() => setInlineEditState({ productId: p.id, field: 'govCode', value: String(p.govCode || '') })} 
-          className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover/gov:opacity-100 text-[9px]"
-        >
-          ✏️
-        </button>
-      </div>
-    )}
-
-  </div>
-</td>
+                          {/* 2. Редактирование Гос. кода */}
+                          {inlineEditState.productId === p.id && inlineEditState.field === 'govCode' ? (
+                            <div className="flex items-center gap-1">
+                              <input 
+                                type="text" 
+                                value={inlineEditState.value} 
+                                onChange={(e) => setInlineEditState({ ...inlineEditState, value: e.target.value })} 
+                                className="w-28 border border-indigo-500 rounded p-1 text-[10px]" 
+                              />
+                              <button onClick={() => handleInlineSave(p.id, 'govCode')} className="p-1 bg-emerald-500 text-white rounded text-[10px]">✓</button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center space-x-1.5 group/gov">
+                              <span className="text-[10px] text-slate-400">{p.govCode || 'Нет гос. кода'}</span>
+                              <button 
+                                onClick={() => setInlineEditState({ productId: p.id, field: 'govCode', value: String(p.govCode || '') })} 
+                                className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover/gov:opacity-100 text-[9px]"
+                              >
+                                ✏️
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </td>
                       
                       {/* Категория с быстрым редактированием */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
@@ -930,12 +935,10 @@ const handleSellProduct = async (quantityToSell) => {
                         )}
                       </td>
 
-                      {/* Расчет доходности */}
-                      
+                      {/* Действия */}
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                         <button onClick={() => handleDeleteProduct(p.id, p.name)} className="text-rose-600 hover:text-rose-900 font-medium">Удалить</button>
                       </td>
-                      
                     </tr>
                   );
                 })}
@@ -983,7 +986,8 @@ const handleSellProduct = async (quantityToSell) => {
           </div>
         </div>
       )}
-{/* МОДАЛЬНОЕ ОКНО: Управление категориями */}
+
+      {/* МОДАЛЬНОЕ ОКНО: Управление категориями */}
       {isManageCategoriesOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
@@ -1021,6 +1025,7 @@ const handleSellProduct = async (quantityToSell) => {
           </div>
         </div>
       )}
+
       {/* МОДАЛЬНОЕ ОКНО: AI-Аналитик */}
       {isAiModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
@@ -1039,6 +1044,8 @@ const handleSellProduct = async (quantityToSell) => {
           </div>
         </div>
       )}
+
+      {/* МОДАЛЬНОЕ ОКНО: История изменений */}
       {isHistoryOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 flex flex-col items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
@@ -1087,6 +1094,7 @@ const handleSellProduct = async (quantityToSell) => {
           </div>
         </div>
       )}
+
       {/* МОДАЛЬНОЕ ОКНО: Карточка товара */}
       {selectedProductDetails && (
         <div className="fixed inset-0 z-[60] bg-black/60 flex flex-col items-center justify-center p-4 backdrop-blur-sm">
@@ -1171,6 +1179,7 @@ const handleSellProduct = async (quantityToSell) => {
           </div>
         </div>
       )}
+
       {/* МОДАЛЬНОЕ ОКНО: Сканер */}
       {isScannerOpen && (
         <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center">
@@ -1185,9 +1194,8 @@ const handleSellProduct = async (quantityToSell) => {
                     const scannedCode = result.text.trim();
                     setLastScanned(scannedCode);
                     
-                    // Включаем логирование в консоль, чтобы видеть это в F12 на ПК
+                    // Включаем логирование в консоль
                     console.log("Сканер считал:", scannedCode);
-                    console.log("Список товаров (первые 3):", products.slice(0, 3).map(p => p.govCode));
 
                     // Ищем товар с принудительным приведением всего к строке и нижнему регистру
                     const found = products.find(p => {
@@ -1198,8 +1206,6 @@ const handleSellProduct = async (quantityToSell) => {
                     if (found) {
                       console.log("НАЙДЕН ТОВАР:", found.name);
                       setScannedProduct(found);
-                    } else {
-                      console.log("Товар не найден в массиве products");
                     }
                   }
                 }}
@@ -1207,71 +1213,80 @@ const handleSellProduct = async (quantityToSell) => {
               <div className="absolute top-20 bg-black/70 text-white p-4 rounded-lg z-[101]">
                 Считано: {lastScanned} | Статус: {scannedProduct ? "НАЙДЕНО!" : "Ищем..."}
               </div>
-              <button onClick={() => setIsScannerOpen(false)} className="...">Закрыть сканер</button>
+              <button 
+                onClick={() => setIsScannerOpen(false)} 
+                className="absolute bottom-10 px-8 py-4 bg-white/90 text-slate-900 rounded-full font-bold shadow-lg z-[101]"
+              >
+                Закрыть сканер
+              </button>
             </div>
-    ) : (
-        /* ЭКРАН 2: Интерфейс ввода количества */
-        <div className="bg-white p-8 rounded-2xl w-full max-w-sm text-center z-[102]">
-          <h2 className="text-xl font-bold mb-1">{scannedProduct.name}</h2>
-          <p className="text-slate-500 mb-6">На складе: {scannedProduct.quantity} шт.</p>
-          
-          {/* Поле ввода */}
-          <input 
-            type="number"
-            id="manualQuantity"
-            placeholder="Введите количество"
-            className="w-full p-4 border-2 border-slate-200 rounded-xl text-center text-lg font-bold mb-4 focus:border-indigo-500 focus:outline-none"
-          />
+          ) : (
+            /* ЭКРАН 2: Интерфейс ввода количества (Списание/Приход) */
+            <div className="bg-white p-8 rounded-2xl w-full max-w-sm text-center z-[102]">
+              <h2 className="text-xl font-bold mb-1">{scannedProduct.name}</h2>
+              <p className="text-slate-500 mb-6">На складе: {scannedProduct.quantity} шт.</p>
+              
+              {/* Поле ввода */}
+              <input 
+                type="number"
+                id="manualQuantity"
+                placeholder="Введите количество"
+                className="w-full p-4 border-2 border-slate-200 rounded-xl text-center text-lg font-bold mb-4 focus:border-indigo-500 focus:outline-none"
+              />
 
-          {/* Кнопки выбора действия */}
-          <div className="grid grid-cols-2 gap-4">
-            <button 
-              onClick={() => {
-                const val = Math.abs(parseInt(document.getElementById('manualQuantity').value) || 0);
-                if (val > 0) handleSellProduct(val);
-              }}
-              className="bg-rose-500 text-white p-4 rounded-xl font-bold hover:bg-rose-600"
-            >
-              Списать (-)
-            </button>
-            <button 
-              onClick={() => {
-                const val = parseInt(document.getElementById('manualQuantity').value) || 0;
-                handleQuantityChange(val); // Приход
-              }}
-              className="bg-emerald-500 text-white p-4 rounded-xl font-bold hover:bg-emerald-600"
-            >
-              Приход (+)
-            </button>
-          </div>
+              {/* Кнопки выбора действия */}
+              <div className="grid grid-cols-2 gap-4">
+                <button 
+                  onClick={() => {
+                    const val = Math.abs(parseInt(document.getElementById('manualQuantity').value) || 0);
+                    if (val > 0) handleSellProduct(val);
+                  }}
+                  className="bg-rose-500 text-white p-4 rounded-xl font-bold hover:bg-rose-600"
+                >
+                  Списать (-)
+                </button>
+                <button 
+                  onClick={() => {
+                    const val = parseInt(document.getElementById('manualQuantity').value) || 0;
+                    if (val > 0) handleQuantityChange(val); // Приход
+                  }}
+                  className="bg-emerald-500 text-white p-4 rounded-xl font-bold hover:bg-emerald-600"
+                >
+                  Приход (+)
+                </button>
+              </div>
 
-          <button 
-            onClick={() => { setScannedProduct(null); setLastScanned("..."); }} 
-            className="mt-6 text-slate-400 text-sm"
-          >
-            Отмена и назад к сканеру
-          </button>
+              <button 
+                onClick={() => { setScannedProduct(null); setLastScanned("..."); }} 
+                className="mt-6 text-slate-400 text-sm font-medium hover:text-slate-600"
+              >
+                Отмена и назад к сканеру
+              </button>
+            </div>
+          )}
         </div>
-    )}
-  </div>
-)}
+      )}
+
+      {/* МОДАЛЬНОЕ ОКНО: Штрих-код */}
       {selectedProductForQR && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white p-6 rounded-2xl shadow-xl text-center">
-            <h3 className="font-bold text-lg mb-4">{selectedProductForQR.name}</h3>
-            <div className="bg-white p-2 border rounded-lg">
+        <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white p-8 rounded-3xl shadow-2xl text-center max-w-sm w-full relative animate-fade-in">
+            <button 
+              onClick={() => setSelectedProductForQR(null)} 
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-full transition-colors"
+            >
+              ✕
+            </button>
+            <h3 className="font-bold text-xl text-slate-800 mb-6 px-4">{selectedProductForQR.name}</h3>
+            <div className="bg-white p-4 border-2 border-slate-100 rounded-2xl mx-auto w-fit inline-block shadow-sm">
               <QRCodeCanvas 
-                value={selectedProductForQR.govCode} 
-                size={200}
+                value={selectedProductForQR.govCode || 'NO_CODE'} 
+                size={220}
               />
             </div>
-            <p className="mt-4 text-sm text-slate-500">Код: {selectedProductForQR.govCode}</p>
-            <button 
-              onClick={() => setSelectedProductForQR(null)}
-              className="mt-6 w-full py-2 bg-slate-100 hover:bg-slate-200 rounded-lg font-semibold"
-            >
-              Закрыть
-            </button>
+            <p className="mt-6 text-sm font-medium text-slate-500 tracking-wide font-mono bg-slate-50 py-2 px-4 rounded-lg inline-block">
+              {selectedProductForQR.govCode || 'Код не задан'}
+            </p>
           </div>
         </div>
       )}

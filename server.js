@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { createClient } from '@libsql/client'; // Новый клиент для работы с облаком Turso
+import { createClient } from '@libsql/client';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -14,15 +14,16 @@ app.use(express.json());
 const SHARED_PASSWORD = "123"; // Ваш пароль для входа
 
 // Подключение к облачной базе Turso
-// Если запуск на компьютере и ключей нет в системе, создастся локальный файл local.db
+// Если запуск на локальном компьютере и ключей нет, создастся файл local.db
 const db = createClient({
   url: process.env.TURSO_DATABASE_URL || "file:local.db",
   authToken: process.env.TURSO_AUTH_TOKEN || "",
 });
 
-// Инициализация таблиц в облаке
+// Инициализация таблиц базы данных
 (async () => {
   try {
+    // 1. Таблица категорий
     await db.execute(`
       CREATE TABLE IF NOT EXISTS categories (
         id TEXT PRIMARY KEY,
@@ -30,6 +31,8 @@ const db = createClient({
         color TEXT
       );
     `);
+    
+    // 2. Таблица товаров
     await db.execute(`
       CREATE TABLE IF NOT EXISTS products (
         id TEXT PRIMARY KEY,
@@ -42,14 +45,17 @@ const db = createClient({
         categoryId TEXT
       );
     `);
-    // Безопасное добавление колонок для аналитики продаж
+    
+    // 3. Безопасное добавление колонок для аналитики продаж (если их еще нет)
     try {
       await db.execute('ALTER TABLE products ADD COLUMN sold_quantity INTEGER DEFAULT 0');
     } catch (e) { /* Игнорируем ошибку, если колонка уже существует */ }
 
     try {
       await db.execute('ALTER TABLE products ADD COLUMN realized_profit REAL DEFAULT 0');
-    } catch (e) { /* Игнорируем ошибку */ }
+    } catch (e) { /* Игнорируем ошибку, если колонка уже существует */ }
+    
+    // 4. Таблица истории
     await db.execute(`
       CREATE TABLE IF NOT EXISTS history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,13 +67,14 @@ const db = createClient({
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    console.log("Успешно подключено к облачной базе данных Turso");
+    
+    console.log("Успешно подключено к базе данных Turso");
   } catch (err) {
     console.error("Ошибка инициализации базы данных Turso:", err);
   }
 })();
 
-// Проверка пароля
+// Middleware: Проверка пароля
 const authenticate = (req, res, next) => {
   const password = req.headers['authorization'];
   if (password === SHARED_PASSWORD) {
@@ -87,7 +94,7 @@ app.post('/api/login', (req, res) => {
   }
 });
 
-// API: Получение всех данных
+// API: Получение всех данных (товары и категории)
 app.get('/api/data', authenticate, async (req, res) => {
   try {
     const productsResult = await db.execute('SELECT * FROM products');
@@ -100,6 +107,8 @@ app.get('/api/data', authenticate, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// API: Получение истории (последние 50 записей)
 app.get('/api/history', authenticate, async (req, res) => {
   try {
     const result = await db.execute(`
@@ -112,13 +121,12 @@ app.get('/api/history', authenticate, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-// Экспорт истории (всей или с лимитом)
+
+// API: Экспорт истории (всей или с лимитом)
 app.get('/api/history/export', authenticate, async (req, res) => {
   const limit = req.query.limit ? parseInt(req.query.limit) : null;
   
-  // Достаем записи от самых новых к старым
   let sql = `SELECT * FROM history ORDER BY id DESC`;
-  
   if (limit) {
     sql += ` LIMIT ${limit}`;
   }
@@ -131,7 +139,7 @@ app.get('/api/history/export', authenticate, async (req, res) => {
   }
 });
 
-// API: Добавление товара
+// API: Добавление одного товара
 app.post('/api/products', authenticate, async (req, res) => {
   const p = req.body;
   try {
@@ -146,19 +154,17 @@ app.post('/api/products', authenticate, async (req, res) => {
   }
 });
 
-// API: Быстрое редактирование товара
+// API: Быстрое редактирование поля товара (Инвентаризация)
 app.put('/api/products/:id', authenticate, async (req, res) => {
   const { id } = req.params;
   const { field, value } = req.body;
   
-  // Безопасная проверка разрешенных полей для защиты от SQL-инъекций
   const allowedFields = ['name', 'quantity', 'price', 'cost', 'categoryId', 'internalCode', 'govCode'];
   if (!allowedFields.includes(field)) {
     return res.status(400).json({ error: 'Недопустимое поле' });
   }
 
   try {
-    // 1. Читаем старые данные
     const oldData = await db.execute({
       sql: `SELECT * FROM products WHERE id = ?`,
       args: [id]
@@ -172,13 +178,11 @@ app.put('/api/products/:id', authenticate, async (req, res) => {
     const oldValue = oldProduct[field];
     const productName = oldProduct.name;
 
-    // 2. Обновляем значение в базе
     await db.execute({
       sql: `UPDATE products SET ${field} = ? WHERE id = ?`,
       args: [value, id]
     });
 
-    // 3. Записываем историю (только если значение изменилось)
     if (String(oldValue) !== String(value)) {
       await db.execute({
         sql: `INSERT INTO history (product_id, product_name, field, old_value, new_value) VALUES (?, ?, ?, ?, ?)`,
@@ -191,7 +195,8 @@ app.put('/api/products/:id', authenticate, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-// Продажа товара (вычитает остаток, фиксирует прибыль и количество продаж)
+
+// API: Продажа товара (вычитает остаток, фиксирует прибыль и количество продаж)
 app.post('/api/products/:id/sell', authenticate, async (req, res) => {
   const { id } = req.params;
   const { quantityToSell } = req.body;
@@ -202,28 +207,23 @@ app.post('/api/products/:id/sell', authenticate, async (req, res) => {
     
     if (!p) return res.status(404).json({ error: 'Товар не найден' });
     
-    // Текущие данные
     const currentQty = p.quantity || 0;
     const price = p.price || 0;
     const cost = p.cost || 0;
     const currentSold = p.sold_quantity || 0;
     const currentProfit = p.realized_profit || 0;
 
-    // Вычисляем новые значения
     const newQty = currentQty - quantityToSell;
     const newSold = currentSold + quantityToSell;
     
-    // Прибыль считается именно по ТЕКУЩЕЙ цене (историческая справедливость)
     const profitFromThisSale = quantityToSell * (price - cost);
     const newTotalProfit = currentProfit + profitFromThisSale;
 
-    // Обновляем базу
     await db.execute({
       sql: `UPDATE products SET quantity = ?, sold_quantity = ?, realized_profit = ? WHERE id = ?`,
       args: [newQty, newSold, newTotalProfit, id]
     });
 
-    // Записываем в историю, чтобы это было видно в логах
     await db.execute({
       sql: `INSERT INTO history (product_id, product_name, field, old_value, new_value) VALUES (?, ?, ?, ?, ?)`,
       args: [id, p.name, 'Продажа', `Остаток: ${currentQty}`, `Продано: ${quantityToSell} шт. (Остаток: ${newQty})`]
@@ -234,6 +234,7 @@ app.post('/api/products/:id/sell', authenticate, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 // API: Удаление товара
 app.delete('/api/products/:id', authenticate, async (req, res) => {
   try {
@@ -242,6 +243,51 @@ app.delete('/api/products/:id', authenticate, async (req, res) => {
       args: [req.params.id]
     });
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API: Массовое добавление/обновление товаров из Excel (Batch Import)
+app.post('/api/products/batch', authenticate, async (req, res) => {
+  const products = req.body;
+  
+  if (!Array.isArray(products)) return res.status(400).json({ error: 'Ожидается массив' });
+
+  try {
+    const statements = [];
+
+    for (const p of products) {
+      let existing = null;
+      
+      const resGov = await db.execute({ sql: "SELECT * FROM products WHERE govCode = ?", args: [p.govCode] });
+      if (resGov.rows.length > 0) existing = resGov.rows[0];
+      
+      if (!existing) {
+        const resName = await db.execute({ sql: "SELECT * FROM products WHERE name = ?", args: [p.name] });
+        if (resName.rows.length > 0) existing = resName.rows[0];
+      }
+      
+      if (!existing && p.internalCode) {
+        const resInt = await db.execute({ sql: "SELECT * FROM products WHERE internalCode = ?", args: [p.internalCode] });
+        if (resInt.rows.length > 0) existing = resInt.rows[0];
+      }
+
+      if (existing) {
+        statements.push({
+          sql: `UPDATE products SET quantity = ?, price = ?, cost = ?, categoryId = ? WHERE id = ?`,
+          args: [p.quantity, p.price, p.cost, p.categoryId, existing.id]
+        });
+      } else {
+        statements.push({
+          sql: `INSERT INTO products (id, name, internalCode, govCode, quantity, price, cost, categoryId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: ['prod-' + Math.random().toString(36).substr(2, 9), p.name, p.internalCode, p.govCode, p.quantity, p.price, p.cost, p.categoryId]
+        });
+      }
+    }
+
+    await db.batch(statements);
+    res.json({ success: true, count: products.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -264,60 +310,11 @@ app.post('/api/categories', authenticate, async (req, res) => {
 // API: Удаление категории
 app.delete('/api/categories/:id', authenticate, async (req, res) => {
   try {
-    // Используем транзакцию из двух запросов
     await db.batch([
       { sql: 'DELETE FROM categories WHERE id = ?', args: [req.params.id] },
       { sql: 'UPDATE products SET categoryId = "" WHERE categoryId = ?', args: [req.params.id] }
     ]);
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-// --- ДОБАВИТЬ В SERVER.JS ---
-
-// API: Массовое добавление товаров из Excel (Batch Import)
-app.post('/api/products/batch', authenticate, async (req, res) => {
-  const products = req.body;
-  
-  if (!Array.isArray(products)) return res.status(400).json({ error: 'Ожидается массив' });
-
-  try {
-    const statements = [];
-
-    for (const p of products) {
-      // 1. Ищем товар в базе по иерархии: Гос.Код -> Наименование -> Внутренний код
-      let existing = null;
-      
-      const resGov = await db.execute({ sql: "SELECT * FROM products WHERE govCode = ?", args: [p.govCode] });
-      if (resGov.rows.length > 0) existing = resGov.rows[0];
-      
-      if (!existing) {
-        const resName = await db.execute({ sql: "SELECT * FROM products WHERE name = ?", args: [p.name] });
-        if (resName.rows.length > 0) existing = resName.rows[0];
-      }
-      
-      if (!existing && p.internalCode) {
-        const resInt = await db.execute({ sql: "SELECT * FROM products WHERE internalCode = ?", args: [p.internalCode] });
-        if (resInt.rows.length > 0) existing = resInt.rows[0];
-      }
-
-      // 2. Если нашли — обновляем, если нет — создаем новый
-      if (existing) {
-        statements.push({
-          sql: `UPDATE products SET quantity = ?, price = ?, cost = ?, categoryId = ? WHERE id = ?`,
-          args: [p.quantity, p.price, p.cost, p.categoryId, existing.id]
-        });
-      } else {
-        statements.push({
-          sql: `INSERT INTO products (id, name, internalCode, govCode, quantity, price, cost, categoryId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: ['prod-' + Math.random().toString(36).substr(2, 9), p.name, p.internalCode, p.govCode, p.quantity, p.price, p.cost, p.categoryId]
-        });
-      }
-    }
-
-    await db.batch(statements);
-    res.json({ success: true, count: products.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
