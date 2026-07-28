@@ -543,7 +543,7 @@ const handleQuantityChange = async (changeAmount) => {
 
         // Форматируем данные для красивого отображения в Excel
         const excelData = data.map(h => ({
-          'Дата и время': new Date(h.created_at).toLocaleString('ru-RU'),
+          'Дата и время': new Date(h.created_at + 'Z').toLocaleString('ru-RU'),
           'Товар': h.product_name,
           'Измененный параметр': fieldTranslations[h.field] || h.field,
           'Старое значение': h.old_value || '',
@@ -1061,7 +1061,7 @@ const handleQuantityChange = async (changeAmount) => {
                   {history.map((h) => (
                     <div key={h.id} className="text-sm bg-slate-50 p-3 rounded-lg border border-slate-100">
                       <div className="text-xs text-slate-400 mb-1">
-                        {new Date(h.created_at).toLocaleString('ru-RU')}
+                        {new Date(h.created_at + 'Z').toLocaleString('ru-RU')}
                       </div>
                       <div>
                         <span className="font-semibold text-slate-800">{h.product_name}</span> изменилось{' '}

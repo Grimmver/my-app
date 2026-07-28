@@ -96,7 +96,7 @@ app.get('/api/history', authenticate, async (req, res) => {
   try {
     const result = await db.execute(`
       SELECT * FROM history 
-      ORDER BY created_at DESC 
+      ORDER BY id DESC 
       LIMIT 50
     `);
     res.json(result.rows);
