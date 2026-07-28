@@ -700,7 +700,9 @@ const handleQuantityChange = async (changeAmount) => {
                   const { profit, marginPercent } = getProfitMetrics(p.price, p.cost);
                   return (
                     <tr key={p.id} className="hover:bg-slate-50 group">
-                      <td className="px-6 py-4 whitespace-nowrap"><div className="font-semibold text-slate-900">{p.name}</div></td>
+                      <td className="px-6 py-4 whitespace-normal break-words min-w-[250px] max-w-[350px]">
+                        <div className="font-semibold text-slate-900 leading-snug">{p.name}</div>
+                      </td>
                       {/* Столбец Кодов с быстрым редактированием */}
 <td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-500">
   <div className="flex flex-col gap-1.5">
