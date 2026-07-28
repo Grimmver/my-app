@@ -42,6 +42,17 @@ const db = createClient({
         categoryId TEXT
       );
     `);
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER,
+        product_name TEXT,
+        field TEXT,
+        old_value TEXT,
+        new_value TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
     console.log("Успешно подключено к облачной базе данных Turso");
   } catch (err) {
     console.error("Ошибка инициализации базы данных Turso:", err);
@@ -81,6 +92,18 @@ app.get('/api/data', authenticate, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+app.get('/api/history', authenticate, async (req, res) => {
+  try {
+    const result = await db.execute(`
+      SELECT * FROM history 
+      ORDER BY created_at DESC 
+      LIMIT 50
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // API: Добавление товара
 app.post('/api/products', authenticate, async (req, res) => {
@@ -109,10 +132,34 @@ app.put('/api/products/:id', authenticate, async (req, res) => {
   }
 
   try {
+    // 1. Читаем старые данные
+    const oldData = await db.execute({
+      sql: `SELECT * FROM products WHERE id = ?`,
+      args: [id]
+    });
+
+    if (oldData.rows.length === 0) {
+      return res.status(404).json({ error: 'Товар не найден' });
+    }
+
+    const oldProduct = oldData.rows[0];
+    const oldValue = oldProduct[field];
+    const productName = oldProduct.name;
+
+    // 2. Обновляем значение в базе
     await db.execute({
       sql: `UPDATE products SET ${field} = ? WHERE id = ?`,
       args: [value, id]
     });
+
+    // 3. Записываем историю (только если значение изменилось)
+    if (String(oldValue) !== String(value)) {
+      await db.execute({
+        sql: `INSERT INTO history (product_id, product_name, field, old_value, new_value) VALUES (?, ?, ?, ?, ?)`,
+        args: [id, productName, field, String(oldValue), String(value)]
+      });
+    }
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

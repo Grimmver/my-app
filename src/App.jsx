@@ -18,6 +18,8 @@ export default function App() {
   // --- Основные данные склада ---
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   // --- Фильтры, поиск и сортировка ---
   const [searchQuery, setSearchQuery] = useState('');
@@ -500,6 +502,28 @@ const handleQuantityChange = async (changeAmount) => {
       setIsAiLoading(false);
     }
   };
+  const fieldTranslations = {
+    name: 'Наименование',
+    quantity: 'Количество',
+    price: 'Цена продажи',
+    cost: 'Себестоимость',
+    categoryId: 'Категория',
+    internalCode: 'Внутренний код',
+    govCode: 'Гос. код'
+  };
+  const fetchHistory = async () => {
+    try {
+      const res = await fetch(`${API_URL}/history`, {
+        headers: { 'Authorization': currentPassword }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data);
+      }
+    } catch (err) {
+      showToast('Ошибка при загрузке истории', 'error');
+    }
+  };
 
   // ЭКРАН 1: Форма входа по общему паролю
   if (!isAuthenticated) {
@@ -601,6 +625,12 @@ const handleQuantityChange = async (changeAmount) => {
               📷 Сканер
             </button>
             <button
+              onClick={() => { fetchHistory(); setIsHistoryOpen(true); }}
+              className="px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2"
+            >
+              📜 История
+            </button>
+            <button
               onClick={handleLogout}
               className="px-3 py-2 text-sm font-semibold text-slate-500 hover:text-rose-600 border border-slate-300 bg-white rounded-lg hover:bg-rose-50 transition-colors"
             >
@@ -686,7 +716,7 @@ const handleQuantityChange = async (changeAmount) => {
                   <th onClick={() => requestSort('name')} className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Наименование {sortBy === 'name' && (sortOrder === 'asc' ? '▲' : '▼')}</th>
                   <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase">Коды (Внут. / Гос.)</th>
                   <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase">Категория</th>
-                  <th onClick={() => requestSort('quantity')} className="px-6 py-3.5 w-32 text-left text-xs font-semibold text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Кол-во {sortBy === 'quantity' && (sortOrder === 'asc' ? '▲' : '▼')}</th>
+                  <th onClick={() => requestSort('quantity')} className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Кол-во {sortBy === 'quantity' && (sortOrder === 'asc' ? '▲' : '▼')}</th>
                   <th onClick={() => requestSort('price')} className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Цена продажи {sortBy === 'price' && (sortOrder === 'asc' ? '▲' : '▼')}</th>
                   <th onClick={() => requestSort('cost')} className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Себестоимость {sortBy === 'cost' && (sortOrder === 'asc' ? '▲' : '▼')}</th>
                   <th onClick={() => requestSort('profitability')} className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Доходность {sortBy === 'profitability' && (sortOrder === 'asc' ? '▲' : '▼')}</th>
@@ -944,6 +974,39 @@ const handleQuantityChange = async (changeAmount) => {
             </div>
             <div className="flex justify-end">
               <button type="button" onClick={() => setIsAiModalOpen(false)} className="px-5 py-2 text-sm font-semibold bg-slate-100 hover:bg-slate-200 rounded-xl">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {isHistoryOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex flex-col items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-slate-800">История изменений</h2>
+              <button onClick={() => setIsHistoryOpen(false)} className="text-slate-400 hover:text-slate-600">✖</button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto flex-1">
+              {history.length === 0 ? (
+                <p className="text-slate-500 text-center">История пока пуста.</p>
+              ) : (
+                <div className="space-y-4">
+                  {history.map((h) => (
+                    <div key={h.id} className="text-sm bg-slate-50 p-3 rounded-lg border border-slate-100">
+                      <div className="text-xs text-slate-400 mb-1">
+                        {new Date(h.created_at).toLocaleString('ru-RU')}
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-800">{h.product_name}</span> изменилось{' '}
+                        <span className="font-medium text-indigo-600">
+                          {fieldTranslations[h.field] || h.field}
+                        </span>{' '}
+                        с <span className="bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded line-through">{h.old_value || 'пусто'}</span> на <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">{h.new_value || 'пусто'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
