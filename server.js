@@ -42,6 +42,14 @@ const db = createClient({
         categoryId TEXT
       );
     `);
+    // Безопасное добавление колонок для аналитики продаж
+    try {
+      await db.execute('ALTER TABLE products ADD COLUMN sold_quantity INTEGER DEFAULT 0');
+    } catch (e) { /* Игнорируем ошибку, если колонка уже существует */ }
+
+    try {
+      await db.execute('ALTER TABLE products ADD COLUMN realized_profit REAL DEFAULT 0');
+    } catch (e) { /* Игнорируем ошибку */ }
     await db.execute(`
       CREATE TABLE IF NOT EXISTS history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -183,7 +191,49 @@ app.put('/api/products/:id', authenticate, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// Продажа товара (вычитает остаток, фиксирует прибыль и количество продаж)
+app.post('/api/products/:id/sell', authenticate, async (req, res) => {
+  const { id } = req.params;
+  const { quantityToSell } = req.body;
 
+  try {
+    const data = await db.execute({ sql: `SELECT * FROM products WHERE id = ?`, args: [id] });
+    const p = data.rows[0];
+    
+    if (!p) return res.status(404).json({ error: 'Товар не найден' });
+    
+    // Текущие данные
+    const currentQty = p.quantity || 0;
+    const price = p.price || 0;
+    const cost = p.cost || 0;
+    const currentSold = p.sold_quantity || 0;
+    const currentProfit = p.realized_profit || 0;
+
+    // Вычисляем новые значения
+    const newQty = currentQty - quantityToSell;
+    const newSold = currentSold + quantityToSell;
+    
+    // Прибыль считается именно по ТЕКУЩЕЙ цене (историческая справедливость)
+    const profitFromThisSale = quantityToSell * (price - cost);
+    const newTotalProfit = currentProfit + profitFromThisSale;
+
+    // Обновляем базу
+    await db.execute({
+      sql: `UPDATE products SET quantity = ?, sold_quantity = ?, realized_profit = ? WHERE id = ?`,
+      args: [newQty, newSold, newTotalProfit, id]
+    });
+
+    // Записываем в историю, чтобы это было видно в логах
+    await db.execute({
+      sql: `INSERT INTO history (product_id, product_name, field, old_value, new_value) VALUES (?, ?, ?, ?, ?)`,
+      args: [id, p.name, 'Продажа', `Остаток: ${currentQty}`, `Продано: ${quantityToSell} шт. (Остаток: ${newQty})`]
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 // API: Удаление товара
 app.delete('/api/products/:id', authenticate, async (req, res) => {
   try {

@@ -39,6 +39,7 @@ export default function App() {
 
   const [selectedProductForQR, setSelectedProductForQR] = useState(null);
   const [lastScanned, setLastScanned] = useState("Наведите на код...");
+  const [selectedProductDetails, setSelectedProductDetails] = useState(null);
   // --- Формы создания ---
   const [newProduct, setNewProduct] = useState({
     name: '',
@@ -450,7 +451,25 @@ const handleQuantityChange = async (changeAmount) => {
     showToast('Ошибка обновления', 'error');
   }
 };
-
+const handleSellProduct = async (quantityToSell) => {
+  try {
+    const res = await fetch(`${API_URL}/products/${scannedProduct.id}/sell`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': currentPassword },
+      body: JSON.stringify({ quantityToSell })
+    });
+    if (res.ok) {
+      showToast(`Успешно продано ${quantityToSell} шт.`, 'success');
+      fetchData(); // Обновляем данные на экране
+      setScannedProduct(null); // Возвращаемся к камере
+      setLastScanned("...");
+    } else {
+      showToast('Ошибка при продаже', 'error');
+    }
+  } catch(err) {
+    showToast('Ошибка сети', 'error');
+  }
+};
   // Расчет общих финансовых показателей
   const stats = React.useMemo(() => {
     let totalQty = 0;
@@ -771,9 +790,7 @@ const handleQuantityChange = async (changeAmount) => {
                   <th onClick={() => requestSort('quantity')} className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Кол-во {sortBy === 'quantity' && (sortOrder === 'asc' ? '▲' : '▼')}</th>
                   <th onClick={() => requestSort('price')} className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Цена продажи {sortBy === 'price' && (sortOrder === 'asc' ? '▲' : '▼')}</th>
                   <th onClick={() => requestSort('cost')} className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Себестоимость {sortBy === 'cost' && (sortOrder === 'asc' ? '▲' : '▼')}</th>
-                  <th onClick={() => requestSort('profitability')} className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Доходность {sortBy === 'profitability' && (sortOrder === 'asc' ? '▲' : '▼')}</th>
                   <th className="relative px-6 py-3.5"><span className="sr-only">Действия</span></th>
-                  <th className="relative px-6 py-3.5"><span className="sr-only">QR</span></th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-200">
@@ -783,7 +800,13 @@ const handleQuantityChange = async (changeAmount) => {
                   return (
                     <tr key={p.id} className="hover:bg-slate-50 group">
                       <td className="px-6 py-4 whitespace-normal break-words min-w-[250px] max-w-[350px]">
-                        <div className="font-semibold text-slate-900 leading-snug">{p.name}</div>
+                        <div 
+                          onClick={() => setSelectedProductDetails(p)}
+                          className="font-semibold text-indigo-600 hover:text-indigo-800 leading-snug cursor-pointer transition-colors w-fit border-b border-dashed border-indigo-300 hover:border-indigo-800"
+                          title="Открыть карточку товара"
+                        >
+                          {p.name}
+                        </div>
                       </td>
                       {/* Столбец Кодов с быстрым редактированием */}
 <td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-slate-500">
@@ -908,25 +931,11 @@ const handleQuantityChange = async (changeAmount) => {
                       </td>
 
                       {/* Расчет доходности */}
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <div className="font-semibold text-emerald-600">+{profit.toLocaleString()} ₸</div>
-                        <div className="text-xs text-indigo-600 font-bold bg-indigo-50 border border-indigo-100 px-1.5 py-0.2 rounded inline-block mt-0.5">{marginPercent}% маржа</div>
-                      </td>
-
+                      
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                         <button onClick={() => handleDeleteProduct(p.id, p.name)} className="text-rose-600 hover:text-rose-900 font-medium">Удалить</button>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                      <button 
-                        onClick={() => setSelectedProductForQR(p)}
-                        className="p-1.5 text-slate-400 hover:text-indigo-600 transition-colors"
-                        title="Показать QR"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h3m-3 0H9m-3 0h3m2 6h4m0 0h2m-2 0v2m0-2v-2m0 0h2m-2 0H8m-2 0H4m4-4h2m-2 0H8m0 0v2m0 0H6m2 0h2m0 0V8m0 0H8m0 0h2m-2 0H6m0 0v2m0 0H4m16 0h-2m-2 0h-2m2 0V8m0 0h2m-2 0h-2m0 0v2m0 0h2m-2 0H8m-2 0H4" />
-                        </svg>
-                      </button>
-                      </td>
+                      
                     </tr>
                   );
                 })}
@@ -1078,6 +1087,90 @@ const handleQuantityChange = async (changeAmount) => {
           </div>
         </div>
       )}
+      {/* МОДАЛЬНОЕ ОКНО: Карточка товара */}
+      {selectedProductDetails && (
+        <div className="fixed inset-0 z-[60] bg-black/60 flex flex-col items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col relative animate-fade-in">
+            
+            {/* Шапка карточки */}
+            <div className="p-6 bg-slate-50 border-b border-slate-100 flex justify-between items-start">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-800 leading-tight">{selectedProductDetails.name}</h2>
+                <div className="text-sm font-semibold text-slate-500 mt-2 flex items-center gap-2">
+                  <span className="px-2 py-0.5 bg-slate-200 rounded-md">
+                    {categories.find(c => c.id === selectedProductDetails.categoryId)?.name || 'Без категории'}
+                  </span>
+                </div>
+              </div>
+              <button onClick={() => setSelectedProductDetails(null)} className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:bg-slate-100 hover:text-slate-800 transition-colors shadow-sm">✖</button>
+            </div>
+            
+            {/* Тело карточки */}
+            <div className="p-6 space-y-6">
+              
+              {/* Блок: Остаток и Цена */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 flex flex-col justify-center items-center text-center">
+                  <div className="text-[10px] text-indigo-500 font-bold uppercase tracking-wider mb-1">Остаток на складе</div>
+                  <div className="text-3xl font-black text-indigo-900">{selectedProductDetails.quantity} <span className="text-lg font-medium text-indigo-600">шт.</span></div>
+                </div>
+                <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 flex flex-col justify-center items-center text-center">
+                  <div className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider mb-1">Цена продажи</div>
+                  <div className="text-2xl font-black text-emerald-900">{selectedProductDetails.price.toLocaleString()} <span className="text-lg font-medium text-emerald-700">₸</span></div>
+                </div>
+              </div>
+
+              {/* Блок: AI-Аналитика продаж */}
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Статистика продаж</h3>
+                <div className="grid grid-cols-2 gap-y-5 gap-x-4">
+                  <div>
+                    <div className="text-xs text-slate-500 mb-0.5">Уже продано</div>
+                    <div className="text-xl font-bold text-slate-800">{selectedProductDetails.sold_quantity || 0} шт.</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500 mb-0.5">Чистая прибыль (Факт)</div>
+                    <div className="text-xl font-bold text-emerald-600">+{(selectedProductDetails.realized_profit || 0).toLocaleString()} ₸</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500 mb-0.5">Маржинальность</div>
+                    <div className="text-sm font-semibold text-indigo-600 bg-indigo-100/50 px-2 py-0.5 rounded inline-block">
+                      {getProfitMetrics(selectedProductDetails.price, selectedProductDetails.cost).marginPercent}%
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500 mb-0.5">Потенциал (с остатка)</div>
+                    <div className="text-sm font-semibold text-slate-600">
+                      {(selectedProductDetails.quantity * (selectedProductDetails.price - selectedProductDetails.cost)).toLocaleString()} ₸
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Блок: Коды и кнопка QR (перенесенная из таблицы) */}
+              <div className="flex justify-between items-center bg-slate-50 px-5 py-4 rounded-2xl border border-slate-200">
+                <div>
+                  <div className="text-xs text-slate-400 font-mono"><span className="text-slate-500 font-semibold">ВНУТ:</span> {selectedProductDetails.internalCode || '—'}</div>
+                  <div className="text-xs text-slate-400 font-mono mt-1"><span className="text-slate-500 font-semibold">ГОС:</span> {selectedProductDetails.govCode || '—'}</div>
+                </div>
+                <button 
+                  onClick={() => {
+                    const prod = selectedProductDetails;
+                    setSelectedProductDetails(null); // Скрываем карточку
+                    setSelectedProductForQR(prod); // Показываем QR
+                  }}
+                  className="flex items-center gap-2 bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-100 hover:border-slate-400 transition-all shadow-sm"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h3m-3 0H9m-3 0h3m2 6h4m0 0h2m-2 0v2m0-2v-2m0 0h2m-2 0H8m-2 0H4m4-4h2m-2 0H8m0 0v2m0 0H6m2 0h2m0 0V8m0 0H8m0 0h2m-2 0H6m0 0v2m0 0H4m16 0h-2m-2 0h-2m2 0V8m0 0h2m-2 0h-2m0 0v2m0 0h2m-2 0H8m-2 0H4" />
+                  </svg>
+                  Штрих-код
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* МОДАЛЬНОЕ ОКНО: Сканер */}
       {isScannerOpen && (
         <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center">
@@ -1134,8 +1227,8 @@ const handleQuantityChange = async (changeAmount) => {
           <div className="grid grid-cols-2 gap-4">
             <button 
               onClick={() => {
-                const val = parseInt(document.getElementById('manualQuantity').value) || 0;
-                handleQuantityChange(-val); // Списание
+                const val = Math.abs(parseInt(document.getElementById('manualQuantity').value) || 0);
+                if (val > 0) handleSellProduct(val);
               }}
               className="bg-rose-500 text-white p-4 rounded-xl font-bold hover:bg-rose-600"
             >
