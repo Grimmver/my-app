@@ -104,6 +104,24 @@ app.get('/api/history', authenticate, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// Экспорт истории (всей или с лимитом)
+app.get('/api/history/export', authenticate, async (req, res) => {
+  const limit = req.query.limit ? parseInt(req.query.limit) : null;
+  
+  // Достаем записи от самых новых к старым
+  let sql = `SELECT * FROM history ORDER BY id DESC`;
+  
+  if (limit) {
+    sql += ` LIMIT ${limit}`;
+  }
+
+  try {
+    const result = await db.execute(sql);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // API: Добавление товара
 app.post('/api/products', authenticate, async (req, res) => {

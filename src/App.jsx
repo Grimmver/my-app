@@ -524,6 +524,58 @@ const handleQuantityChange = async (changeAmount) => {
       showToast('Ошибка при загрузке истории', 'error');
     }
   };
+  const handleExportHistory = async (limit = null) => {
+    try {
+      // Формируем URL с лимитом или без него
+      const url = limit ? `${API_URL}/history/export?limit=${limit}` : `${API_URL}/history/export`;
+      
+      const res = await fetch(url, {
+        headers: { 'Authorization': currentPassword }
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        
+        if (data.length === 0) {
+          showToast('История пуста, нечего выгружать', 'info');
+          return;
+        }
+
+        // Форматируем данные для красивого отображения в Excel
+        const excelData = data.map(h => ({
+          'Дата и время': new Date(h.created_at).toLocaleString('ru-RU'),
+          'Товар': h.product_name,
+          'Измененный параметр': fieldTranslations[h.field] || h.field,
+          'Старое значение': h.old_value || '',
+          'Новое значение': h.new_value || ''
+        }));
+
+        // Создаем и скачиваем файл Excel
+        const worksheet = XLSX.utils.json_to_sheet(excelData);
+        
+        // Настраиваем ширину колонок для удобства чтения
+        worksheet['!cols'] = [
+          { wch: 20 }, // Дата
+          { wch: 40 }, // Товар
+          { wch: 20 }, // Параметр
+          { wch: 15 }, // Старое
+          { wch: 15 }  // Новое
+        ];
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "История");
+        
+        const filename = limit ? `История_последние_${limit}.xlsx` : `История_вся.xlsx`;
+        XLSX.writeFile(workbook, filename);
+        
+        showToast('Файл истории успешно скачан', 'success');
+      } else {
+        showToast('Ошибка при получении данных истории', 'error');
+      }
+    } catch (err) {
+      showToast('Ошибка сети при выгрузке', 'error');
+    }
+  };
 
   // ЭКРАН 1: Форма входа по общему паролю
   if (!isAuthenticated) {
@@ -981,9 +1033,24 @@ const handleQuantityChange = async (changeAmount) => {
       {isHistoryOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 flex flex-col items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl">
               <h2 className="text-xl font-bold text-slate-800">История изменений</h2>
-              <button onClick={() => setIsHistoryOpen(false)} className="text-slate-400 hover:text-slate-600">✖</button>
+              
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => handleExportHistory(100)} 
+                  className="text-xs font-semibold px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+                >
+                  📥 Скачать последние 100
+                </button>
+                <button 
+                  onClick={() => handleExportHistory()} 
+                  className="text-xs font-semibold px-3 py-1.5 bg-indigo-50 border border-indigo-100 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors"
+                >
+                  📥 Скачать всё
+                </button>
+                <button onClick={() => setIsHistoryOpen(false)} className="text-slate-400 hover:text-slate-600 ml-2">✖</button>
+              </div>
             </div>
             
             <div className="p-6 overflow-y-auto flex-1">
