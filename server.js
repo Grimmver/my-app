@@ -319,7 +319,34 @@ app.delete('/api/categories/:id', authenticate, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// Редактирование товара (название, штрих-код, цена)
+app.put('/products/:id', authenticate, async (req, res) => {
+  const { id } = req.params;
+  const { name, govCode, price } = req.body;
 
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Название товара не может быть пустым' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE products 
+       SET name = $1, gov_code = $2, price = $3 
+       WHERE id = $4 
+       RETURNING *`,
+      [name.trim(), govCode ? govCode.trim() : null, parseFloat(price) || 0, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Товар не найден' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Ошибка при обновлении товара:', err);
+    res.status(500).json({ error: 'Ошибка сервера при обновлении товара' });
+  }
+});
 // Раздача интерфейса React
 app.use(express.static(path.join(__dirname, 'dist')));
 

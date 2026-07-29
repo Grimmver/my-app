@@ -40,6 +40,8 @@ export default function App() {
   const [selectedProductForQR, setSelectedProductForQR] = useState(null);
   const [lastScanned, setLastScanned] = useState("Наведите на код...");
   const [selectedProductDetails, setSelectedProductDetails] = useState(null);
+  const [isEditingProduct, setIsEditingProduct] = useState(false);
+  const [editFormData, setEditFormData] = useState({ name: '', govCode: '', price: 0 });
   
   // --- Формы создания ---
   const [newProduct, setNewProduct] = useState({
@@ -1110,12 +1112,124 @@ export default function App() {
                   </span>
                 </div>
               </div>
-              <button onClick={() => setSelectedProductDetails(null)} className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:bg-slate-100 hover:text-slate-800 transition-colors shadow-sm">✖</button>
+              <div className="flex items-center gap-2">
+              {/* Кнопка включения режима редактирования */}
+              <button 
+                onClick={() => {
+                  setIsEditingProduct(!isEditingProduct);
+                  setEditFormData({
+                    name: selectedProductDetails.name,
+                    govCode: selectedProductDetails.govCode || '',
+                    price: selectedProductDetails.price || 0
+                  });
+                }}
+                className="p-2 bg-white border border-slate-200 text-slate-600 rounded-full hover:bg-amber-50 hover:border-amber-300 transition-colors shadow-sm text-sm"
+                title="Редактировать товар"
+              >
+                ✏️
+              </button>
+              {/* Кнопка закрытия */}
+              <button 
+                onClick={() => {
+                  setSelectedProductDetails(null);
+                  setIsEditingProduct(false);
+                }} 
+                className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:bg-slate-100 hover:text-slate-800 transition-colors shadow-sm"
+              >
+                ✖
+              </button>
             </div>
+          </div>
             
             {/* Тело карточки */}
             <div className="p-6 space-y-6">
-              
+              {/* БЛОК РЕДАКТИРОВАНИЯ (показывается только при нажатии на карандаш) */}
+              {isEditingProduct && (
+                <div className="bg-amber-50/70 p-5 rounded-2xl border border-amber-200 space-y-4 animate-fade-in">
+                  <h3 className="text-xs font-bold text-amber-700 uppercase tracking-widest">Редактирование данных</h3>
+                  
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Наименование</label>
+                    <input 
+                      type="text" 
+                      value={editFormData.name} 
+                      onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-amber-300 rounded-xl font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Гос. штрих-код</label>
+                      <input 
+                        type="text" 
+                        value={editFormData.govCode} 
+                        onChange={(e) => setEditFormData({ ...editFormData, govCode: e.target.value })}
+                        className="w-full px-3 py-2 bg-white border border-amber-300 rounded-xl text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Цена продажи (₸)</label>
+                      <input 
+                        type="number" 
+                        value={editFormData.price} 
+                        onChange={(e) => setEditFormData({ ...editFormData, price: e.target.value })}
+                        className="w-full px-3 py-2 bg-white border border-amber-300 rounded-xl text-slate-800 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={async () => {
+                        if (!editFormData.name.trim()) {
+                          showToast('Название не может быть пустым', 'error');
+                          return;
+                        }
+
+                        try {
+                          const res = await fetch(`${API_URL}/products/${selectedProductDetails.id}`, {
+                            method: 'PUT',
+                            headers: { 
+                              'Content-Type': 'application/json', 
+                              'Authorization': currentPassword 
+                            },
+                            body: JSON.stringify(editFormData)
+                          });
+
+                          if (res.ok) {
+                            const updated = await res.json();
+                            showToast('Товар успешно обновлен', 'success');
+                            
+                            // Обновляем данные в открытой карточке и закрываем форму
+                            setSelectedProductDetails({ 
+                              ...selectedProductDetails, 
+                              name: updated.name,
+                              govCode: updated.gov_code,
+                              price: parseFloat(updated.price)
+                            });
+                            setIsEditingProduct(false);
+                            fetchData(); // Обновляем главный список
+                          } else {
+                            showToast('Ошибка при сохранении', 'error');
+                          }
+                        } catch (err) {
+                          showToast('Ошибка сети', 'error');
+                        }
+                      }}
+                      className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl shadow-md transition-colors text-sm"
+                    >
+                      Сохранить
+                    </button>
+                    <button
+                      onClick={() => setIsEditingProduct(false)}
+                      className="px-4 py-2.5 bg-slate-200 text-slate-600 font-semibold rounded-xl text-sm hover:bg-slate-300 transition-colors"
+                    >
+                      Отмена
+                    </button>
+                  </div>
+                </div>
+              )}
               {/* Блок: Остаток и Цена */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 flex flex-col justify-center items-center text-center">
