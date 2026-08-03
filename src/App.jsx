@@ -5,8 +5,8 @@ import { BarcodeScanner } from '@capacitor-mlkit/barcode-scanning';
 
 // Если вы запускаете локально, оставьте http://localhost:3000
 // При деплое на Render, замените на URL вашего веб-сервиса
-//const API_URL = "https://my-app-0m5k.onrender.com/api"; 
-const API_URL = "http://localhost:3000/api";
+const API_URL = "https://my-app-0m5k.onrender.com/api"; 
+//const API_URL = "http://localhost:3000/api";
 
 export default function App() {
   // --- Состояния авторизации ---
