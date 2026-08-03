@@ -621,7 +621,7 @@ export default function App() {
           <div className="space-y-4">
             <input
               type="text"
-              placeholder="Логин (например: owner)"
+              placeholder="Логин (например: login)"
               value={usernameInput}
               onChange={(e) => setUsernameInput(e.target.value)}
               className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
