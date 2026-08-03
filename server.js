@@ -3,6 +3,8 @@ import cors from 'cors';
 import { createClient } from '@libsql/client';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,7 +13,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const SHARED_PASSWORD = "123"; // Ваш пароль для входа
+const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key';
+//const SHARED_PASSWORD = "123"; // Ваш пароль для входа
 
 // Подключение к облачной базе Turso
 // Если запуск на локальном компьютере и ключей нет, создастся файл local.db
@@ -67,6 +70,25 @@ const db = createClient({
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    // 5. Таблица пользователей
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL
+      );
+    `);
+    // Создаем владельца по умолчанию, если таблица пустая
+    const usersCount = await db.execute('SELECT COUNT(*) as count FROM users');
+    if (usersCount.rows[0].count === 0) {
+      const hashedPass = await bcrypt.hash('123', 10);
+      await db.execute({
+        sql: `INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)`,
+        args: ['owner', hashedPass, 'owner']
+      });
+      console.log("Создан пользователь по умолчанию. Логин: owner, Пароль: 123");
+    }
     
     console.log("Успешно подключено к базе данных Turso");
   } catch (err) {
@@ -74,23 +96,46 @@ const db = createClient({
   }
 })();
 
-// Middleware: Проверка пароля
+// Middleware: Проверка токена
 const authenticate = (req, res, next) => {
-  const password = req.headers['authorization'];
-  if (password === SHARED_PASSWORD) {
-    next();
-  } else {
-    res.status(401).json({ error: 'Неверный пароль доступа' });
+  const authHeader = req.headers['authorization'];
+  // Поддержка старого формата, пока фронтенд не обновлен
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : authHeader;
+
+  if (!token) {
+    return res.status(401).json({ error: 'Нет доступа' });
   }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) return res.status(403).json({ error: 'Токен недействителен' });
+    req.user = user; 
+    next();
+  });
 };
 
-// API: Авторизация
-app.post('/api/login', (req, res) => {
-  const { password } = req.body;
-  if (password === SHARED_PASSWORD) {
-    res.json({ success: true });
-  } else {
-    res.status(401).json({ error: 'Неверный пароль' });
+// API: Авторизация (Вход)
+app.post('/api/login', async (req, res) => {
+  // Если фронтенд пока присылает только пароль, по умолчанию ищем пользователя 'owner'
+  const { password, username = 'owner' } = req.body; 
+  
+  try {
+    const result = await db.execute({ sql: 'SELECT * FROM users WHERE username = ?', args: [username] });
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Пользователь не найден' });
+    }
+
+    const user = result.rows[0];
+    const match = await bcrypt.compare(password, user.password_hash);
+    
+    if (!match) {
+      return res.status(401).json({ error: 'Неверный пароль' });
+    }
+
+    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
+    // Отправляем токен вместо success: true
+    res.json({ token, role: user.role, username: user.username });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -320,7 +365,7 @@ app.delete('/api/categories/:id', authenticate, async (req, res) => {
   }
 });
 // Редактирование товара (название, штрих-код, цена)
-app.put('/products/:id', authenticate, async (req, res) => {
+/*app.put('/products/:id', authenticate, async (req, res) => {
   const { id } = req.params;
   const { name, govCode, price } = req.body;
 
@@ -346,7 +391,7 @@ app.put('/products/:id', authenticate, async (req, res) => {
     console.error('Ошибка при обновлении товара:', err);
     res.status(500).json({ error: 'Ошибка сервера при обновлении товара' });
   }
-});
+});*/
 // Раздача интерфейса React
 app.use(express.static(path.join(__dirname, 'dist')));
 
