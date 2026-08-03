@@ -89,6 +89,20 @@ const db = createClient({
       });
       console.log("Создан пользователь по умолчанию. Логин: owner, Пароль: 123");
     }
+    // Создаем тестового продавца, если его нет
+    const sellerCount = await db.execute("SELECT COUNT(*) as count FROM users WHERE username = 'seller'");
+    if (sellerCount.rows[0].count === 0) {
+      const hashedPass = await bcrypt.hash('12345', 10); // Пароль продавца будет 12345
+      await db.execute({
+        sql: `INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)`,
+        args: ['seller', hashedPass, 'seller']
+      });
+      console.log("Создан тестовый продавец. Логин: seller, Пароль: 12345");
+    }
+    // Добавляем колонку user_name в историю (если ее еще нет)
+    try {
+      await db.execute('ALTER TABLE history ADD COLUMN user_name TEXT DEFAULT "owner"');
+    } catch (e) { /* Игнорируем ошибку, если колонка уже существует */ }
     
     console.log("Успешно подключено к базе данных Turso");
   } catch (err) {
@@ -131,7 +145,7 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ error: 'Неверный пароль' });
     }
 
-    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
+    const token = jwt.sign({ id: user.id, role: user.role, username: user.username }, JWT_SECRET, { expiresIn: '30d' });
     // Отправляем токен вместо success: true
     res.json({ token, role: user.role, username: user.username });
   } catch (err) {
@@ -230,8 +244,8 @@ app.put('/api/products/:id', authenticate, async (req, res) => {
 
     if (String(oldValue) !== String(value)) {
       await db.execute({
-        sql: `INSERT INTO history (product_id, product_name, field, old_value, new_value) VALUES (?, ?, ?, ?, ?)`,
-        args: [id, productName, field, String(oldValue), String(value)]
+        sql: `INSERT INTO history (product_id, product_name, field, old_value, new_value, user_name) VALUES (?, ?, ?, ?, ?, ?)`,
+        args: [id, productName, field, String(oldValue), String(value), req.user.username || 'Система']
       });
     }
 
@@ -270,8 +284,8 @@ app.post('/api/products/:id/sell', authenticate, async (req, res) => {
     });
 
     await db.execute({
-      sql: `INSERT INTO history (product_id, product_name, field, old_value, new_value) VALUES (?, ?, ?, ?, ?)`,
-      args: [id, p.name, 'Продажа', `Остаток: ${currentQty}`, `Продано: ${quantityToSell} шт. (Остаток: ${newQty})`]
+      sql: `INSERT INTO history (product_id, product_name, field, old_value, new_value, user_name) VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [id, p.name, 'Продажа', `Остаток: ${currentQty}`, `Продано: ${quantityToSell} шт. (Остаток: ${newQty})`, req.user.username || 'Система']
     });
 
     res.json({ success: true });

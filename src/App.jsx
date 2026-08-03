@@ -571,22 +571,27 @@ export default function App() {
           return;
         }
 
+        // Форматируем данные для красивого отображения в Excel
         const excelData = data.map(h => ({
           'Дата и время': new Date(h.created_at + 'Z').toLocaleString('ru-RU'),
+          'Пользователь': h.user_name || 'owner', // Добавили эту строчку
           'Товар': h.product_name,
           'Измененный параметр': fieldTranslations[h.field] || h.field,
           'Старое значение': formatHistoryValue(h.field, h.old_value) || '',
           'Новое значение': formatHistoryValue(h.field, h.new_value) || ''
         }));
 
+        // Создаем и скачиваем файл Excel
         const worksheet = XLSX.utils.json_to_sheet(excelData);
         
+        // Настраиваем ширину колонок (стало 6 колонок)
         worksheet['!cols'] = [
-          { wch: 20 },
-          { wch: 40 },
-          { wch: 20 },
-          { wch: 15 },
-          { wch: 15 } 
+          { wch: 20 }, // Дата
+          { wch: 15 }, // Пользователь
+          { wch: 40 }, // Товар
+          { wch: 20 }, // Параметр
+          { wch: 15 }, // Старое
+          { wch: 15 }  // Новое
         ];
 
         const workbook = XLSX.utils.book_new();
@@ -740,7 +745,7 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
         {/* Аналитика */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${userRole === 'owner' ? 'lg:grid-cols-4' : 'lg:max-w-3xl lg:mx-auto w-full'}`}>
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-4">
             <div className="p-3 rounded-xl bg-indigo-50 text-indigo-600"><strong>₸</strong></div>
             <div>
@@ -862,12 +867,14 @@ export default function App() {
                           ) : (
                             <div className="flex items-center space-x-1.5 group/code">
                               <span className="font-semibold text-slate-600">{p.internalCode || 'Нет кода'}</span>
+                              {userRole === 'owner' && (
                               <button 
                                 onClick={() => setInlineEditState({ productId: p.id, field: 'internalCode', value: String(p.internalCode || '') })} 
                                 className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover/code:opacity-100 text-[10px]"
                               >
                                 ✏️
                               </button>
+                              )}
                             </div>
                           )}
 
@@ -885,12 +892,14 @@ export default function App() {
                           ) : (
                             <div className="flex items-center space-x-1.5 group/gov">
                               <span className="text-[10px] text-slate-400">{p.govCode || 'Нет гос. кода'}</span>
-                              <button 
-                                onClick={() => setInlineEditState({ productId: p.id, field: 'govCode', value: String(p.govCode || '') })} 
-                                className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover/gov:opacity-100 text-[9px]"
-                              >
-                                ✏️
-                              </button>
+                              {userRole === 'owner' && (
+                                <button 
+                                  onClick={() => setInlineEditState({ productId: p.id, field: 'govCode', value: String(p.govCode || '') })} 
+                                  className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover/gov:opacity-100 text-[9px]"
+                                >
+                                  ✏️
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
@@ -915,7 +924,9 @@ export default function App() {
                             <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${cat ? cat.color : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
                               {cat ? cat.name : 'Без категории'}
                             </span>
-                            <button onClick={() => setInlineEditState({ productId: p.id, field: 'categoryId', value: p.categoryId || '' })} className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover:opacity-100 text-xs">✏️</button>
+                            {userRole === 'owner' && (
+                              <button onClick={() => setInlineEditState({ productId: p.id, field: 'categoryId', value: p.categoryId || '' })} className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover:opacity-100 text-xs">✏️</button>
+                            )}
                           </div>
                         )}
                       </td>
@@ -945,7 +956,9 @@ export default function App() {
                         ) : (
                           <div className="flex items-center space-x-2">
                             <span className="font-semibold">{p.price.toLocaleString()} ₸</span>
-                            <button onClick={() => setInlineEditState({ productId: p.id, field: 'price', value: p.price.toString() })} className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover:opacity-100 text-xs">✏️</button>
+                            {userRole === 'owner' && (
+                              <button onClick={() => setInlineEditState({ productId: p.id, field: 'price', value: p.price.toString() })} className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover:opacity-100 text-xs">✏️</button>
+                            )}
                           </div>
                         )}
                       </td>
@@ -1110,8 +1123,11 @@ export default function App() {
                 <div className="space-y-4">
                   {history.map((h) => (
                     <div key={h.id} className="text-sm bg-slate-50 p-3 rounded-lg border border-slate-100">
-                      <div className="text-xs text-slate-400 mb-1">
-                        {new Date(h.created_at + 'Z').toLocaleString('ru-RU')}
+                      <div className="text-xs text-slate-400 mb-1 flex justify-between items-center">
+                        <span>{new Date(h.created_at + 'Z').toLocaleString('ru-RU')}</span>
+                        <span className="font-medium text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-md">
+                          👤 {h.user_name || 'owner'}
+                        </span>
                       </div>
                       <div>
                         <span className="font-semibold text-slate-800">{h.product_name}</span> изменилось{' '}
