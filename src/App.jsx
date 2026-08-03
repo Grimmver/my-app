@@ -1148,7 +1148,7 @@ export default function App() {
       {/* МОДАЛЬНОЕ ОКНО: Карточка товара */}
       {selectedProductDetails && (
         <div className="fixed inset-0 z-[60] bg-black/60 flex flex-col items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col relative animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[95vh] overflow-hidden flex flex-col relative animate-fade-in">
             
             {/* Шапка карточки */}
             <div className="p-6 bg-slate-50 border-b border-slate-100 flex justify-between items-start">
@@ -1192,7 +1192,7 @@ export default function App() {
           </div>
             
             {/* Тело карточки */}
-            <div className="p-6 space-y-6">
+            <div className="p-6 space-y-6 overflow-y-auto flex-1">
               {/* БЛОК РЕДАКТИРОВАНИЯ (показывается только при нажатии на карандаш) */}
               {isEditingProduct && userRole === 'owner' && (
                 <div className="bg-amber-50/70 p-5 rounded-2xl border border-amber-200 space-y-4 animate-fade-in">
