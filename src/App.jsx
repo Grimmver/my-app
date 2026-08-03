@@ -1,20 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { QRCodeCanvas } from 'qrcode.react';
-import { BarcodeScanner } from '@capacitor-mlkit/barcode-scanning';;
+import { BarcodeScanner } from '@capacitor-mlkit/barcode-scanning';
 
 // Если вы запускаете локально, оставьте http://localhost:3000
-// При деплое на Render, замените на URL вашего веб-сервиса, например: https://my-sklad.onrender.com
+// При деплое на Render, замените на URL вашего веб-сервиса
 //const API_URL = "https://my-app-0m5k.onrender.com/api"; 
 const API_URL = "http://localhost:3000/api";
 
 export default function App() {
   // --- Состояния авторизации ---
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return sessionStorage.getItem('app_authenticated') === 'true';
-  });
+  const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
-  const [loginError, setLoginError] = useState('');
+  const [token, setToken] = useState(localStorage.getItem('token') || '');
+  const [userRole, setUserRole] = useState(localStorage.getItem('userRole') || '');
 
   // --- Основные данные склада ---
   const [categories, setCategories] = useState([]);
@@ -59,18 +58,17 @@ export default function App() {
   // --- Быстрое инлайн-редактирование ---
   const [inlineEditState, setInlineEditState] = useState({
     productId: null,
-    field: null, // 'quantity' | 'price' | 'cost' | 'categoryId' | 'internalCode' | 'govCode'
+    field: null,
+    //field: null, // 'quantity' | 'price' | 'cost' | 'categoryId' | 'internalCode' | 'govCode'
     value: ''
   });
 
-  const currentPassword = sessionStorage.getItem('app_password') || '';
-
-  // Загружаем данные из общей базы сразу после успешного входа
+  // Загружаем данные сразу после успешного входа
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchData();
+    if (token) {
+      fetchData(token);
     }
-  }, [isAuthenticated]);
+  }, [token]);
 
   // Функция всплывающих уведомлений
   const showToast = (message, type = 'success') => {
@@ -79,16 +77,16 @@ export default function App() {
   };
 
   // Метод получения всех данных с сервера
-  const fetchData = async () => {
+  const fetchData = async (currentToken = token) => {
     try {
       const res = await fetch(`${API_URL}/data`, {
-        headers: { 'Authorization': currentPassword }
+        headers: { 'Authorization': `Bearer ${currentToken}` }
       });
       if (res.ok) {
         const data = await res.json();
         setProducts(data.products || []);
         setCategories(data.categories || []);
-      } else if (res.status === 401) {
+      } else if (res.status === 401 || res.status === 403) {
         handleLogout();
       }
     } catch (err) {
@@ -97,31 +95,42 @@ export default function App() {
   };
 
   // Авторизация
-  const handleLogin = async (e) => {
-    e.preventDefault();
+  const handleLogin = async () => {
+    if (!usernameInput || !passwordInput) {
+      showToast('Введите логин и пароль', 'error');
+      return;
+    }
+
     try {
       const res = await fetch(`${API_URL}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: passwordInput })
+        body: JSON.stringify({ username: usernameInput.trim(), password: passwordInput })
       });
       
+      const data = await res.json();
+      
       if (res.ok) {
-        sessionStorage.setItem('app_authenticated', 'true');
-        sessionStorage.setItem('app_password', passwordInput);
-        setIsAuthenticated(true);
-        setLoginError('');
+        setToken(data.token);
+        setUserRole(data.role);
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('userRole', data.role);
+        
+        showToast(`Добро пожаловать, ${data.username}!`, 'success');
+        fetchData(data.token); 
       } else {
-        setLoginError('Неверный пароль доступа');
+        showToast(data.error || 'Ошибка входа', 'error');
       }
     } catch (err) {
-      setLoginError('Сервер базы данных недоступен');
+      showToast('Ошибка сети', 'error');
     }
   };
 
   const handleLogout = () => {
-    sessionStorage.clear();
-    setIsAuthenticated(false);
+    localStorage.removeItem('token');
+    localStorage.removeItem('userRole');
+    setToken('');
+    setUserRole('');
   };
 
   // Метрики доходности товара
@@ -165,7 +174,7 @@ export default function App() {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': currentPassword
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(finalProduct)
       });
@@ -204,7 +213,7 @@ export default function App() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': currentPassword
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ field, value: finalValue })
       });
@@ -222,39 +231,41 @@ export default function App() {
     }
   };
 
-  // Функция 1: Экспорт текущей таблицы в файл Excel
+  // Экспорт текущей таблицы в Excel
   const handleExportToExcel = () => {
     if (products.length === 0) {
       showToast('Нет данных для выгрузки', 'error');
       return;
     }
 
-    // Формируем понятную человеку таблицу на русском языке
     const dataToExport = products.map(p => {
       const cat = categories.find(c => c.id === p.categoryId);
-      return {
+      const baseObj = {
         'Наименование товара': p.name,
         'Внутренний код': p.internalCode,
         'Гос. код товара': p.govCode,
         'Категория': cat ? cat.name : 'Без категории',
         'Остаток (шт)': p.quantity,
         'Цена продажи (₸)': p.price,
-        'Себестоимость (₸)': p.cost,
-        'Ожидаемая прибыль (₸)': (p.price - p.cost) * p.quantity
       };
+      
+      if (userRole === 'owner') {
+        baseObj['Себестоимость (₸)'] = p.cost;
+        baseObj['Ожидаемая прибыль (₸)'] = (p.price - p.cost) * p.quantity;
+      }
+      return baseObj;
     });
 
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Складской учет');
 
-    // Автоматическое скачивание файла в браузер
     const dateStr = new Date().toISOString().split('T')[0];
     XLSX.writeFile(workbook, `Otchet_Sklad_${dateStr}.xlsx`);
     showToast('Файл Excel успешно сгенерирован и скачан');
   };
 
-  // Функция 2: Импорт множества товаров из файла Excel
+  // Импорт из Excel
   const handleImportFromExcel = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -264,18 +275,11 @@ export default function App() {
       try {
         const binaryStr = evt.target.result;
         const workbook = XLSX.read(binaryStr, { type: 'binary' });
-        
-        // Берем самый первый лист из файла Excel
         const firstWorksheet = workbook.Sheets[workbook.SheetNames[0]];
-        // Превращаем строки Excel в удобный массив объектов
         const rawRows = XLSX.utils.sheet_to_json(firstWorksheet);
 
-        // Маппим русские названия колонок обратно в ключи нашей базы данных
         const formattedProducts = rawRows.map(row => {
-          // Получаем имя категории из Excel
           const categoryName = String(row['Категория'] || row['category'] || "").trim();
-          
-          // Ищем ID существующей категории, имя которой совпадает с текстом из Excel
           const foundCategory = categories.find(c => c.name.trim() === categoryName);
           
           return {
@@ -285,29 +289,27 @@ export default function App() {
             quantity: Number(row['Остаток (шт)']) || Number(row['quantity']) || 0,
             price: Number(row['Цена продажи (₸)']) || Number(row['price']) || 0,
             cost: Number(row['Себестоимость (₸)']) || Number(row['cost']) || 0,
-            // Если нашли категорию по имени — берем её ID, иначе пустая строка
             categoryId: foundCategory ? foundCategory.id : ""
           };
-        }).filter(p => p.name); // Пропускаем пустые строки, если нет имени
+        }).filter(p => p.name);
 
         if (formattedProducts.length === 0) {
           showToast('В файле не найдено подходящих товаров', 'error');
           return;
         }
 
-        // Отправляем массив на наш новый пакетный роут бэкенда
         const res = await fetch(`${API_URL}/products/batch`, {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
-            'Authorization': currentPassword
+            'Authorization': `Bearer ${token}`
           },
           body: JSON.stringify(formattedProducts)
         });
 
         if (res.ok) {
           showToast(`Успешно импортировано ${formattedProducts.length} товаров из Excel!`);
-          fetchData(); // Обновляем данные на экране
+          fetchData(); 
         } else {
           showToast('Ошибка сохранения пакета на сервере', 'error');
         }
@@ -317,7 +319,7 @@ export default function App() {
     };
 
     reader.readAsBinaryString(file);
-    e.target.value = ''; // Сбрасываем значение инпута, чтобы можно было загрузить файл повторно
+    e.target.value = ''; 
   };
 
   // Удаление товара из базы данных
@@ -326,7 +328,7 @@ export default function App() {
       try {
         const res = await fetch(`${API_URL}/products/${prodId}`, {
           method: 'DELETE',
-          headers: { 'Authorization': currentPassword }
+          headers: { 'Authorization': `Bearer ${token}` }
         });
         if (res.ok) {
           showToast(`Товар "${name}" удален`);
@@ -356,13 +358,13 @@ export default function App() {
     try {
       const res = await fetch(`${API_URL}/categories`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': currentPassword },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(newCategory)
       });
       if (res.ok) {
         setNewCategoryName('');
         showToast(`Категория "${newCategory.name}" создана`);
-        fetchData(); // Обновляем базу
+        fetchData();
       }
     } catch (err) {
       showToast('Ошибка при добавлении категории', 'error');
@@ -373,18 +375,17 @@ export default function App() {
     try {
       const res = await fetch(`${API_URL}/categories/${catId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': currentPassword }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
         showToast('Категория удалена', 'warning');
-        fetchData(); // Обновляем базу, чтобы товары потеряли привязку
+        fetchData(); 
       }
     } catch (err) {
       showToast('Ошибка удаления', 'error');
     }
   };
 
-  // Обработка клика по заголовку таблицы для сортировки
   const requestSort = (key) => {
     let direction = 'asc';
     if (sortBy === key && sortOrder === 'asc') {
@@ -394,7 +395,6 @@ export default function App() {
     setSortOrder(direction);
   };
 
-  // Фильтрация и сортировка массива перед рендером таблицы
   const filteredProducts = products.filter(p => {
     const matchesSearch = 
       p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -426,11 +426,9 @@ export default function App() {
     }
   });
 
-  // 1. Состояние для сканера
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scannedProduct, setScannedProduct] = useState(null);
 
-  // 2. Функция обработки списания/прихода (без маржинальности)
   const handleQuantityChange = async (changeAmount) => {
     if (!scannedProduct) return;
 
@@ -439,7 +437,7 @@ export default function App() {
     try {
       const res = await fetch(`${API_URL}/products/${scannedProduct.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': currentPassword },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ field: 'quantity', value: newQuantity })
       });
       
@@ -447,25 +445,24 @@ export default function App() {
         showToast(`Товар "${scannedProduct.name}" изменен на ${changeAmount}`);
         setIsScannerOpen(false);
         setScannedProduct(null);
-        fetchData(); // Обновить таблицу
+        fetchData(); 
       }
     } catch (err) {
       showToast('Ошибка обновления', 'error');
     }
   };
 
-  // 3. Функция реальной продажи
   const handleSellProduct = async (quantityToSell) => {
     try {
       const res = await fetch(`${API_URL}/products/${scannedProduct.id}/sell`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': currentPassword },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ quantityToSell })
       });
       if (res.ok) {
         showToast(`Успешно продано ${quantityToSell} шт.`, 'success');
-        fetchData(); // Обновляем данные на экране
-        setScannedProduct(null); // Возвращаемся к камере
+        fetchData(); 
+        setScannedProduct(null); 
         setLastScanned("...");
       } else {
         showToast('Ошибка при продаже', 'error');
@@ -475,7 +472,6 @@ export default function App() {
     }
   };
 
-  // Расчет общих финансовых показателей
   const stats = React.useMemo(() => {
     let totalQty = 0;
     let totalRetailValue = 0;
@@ -495,13 +491,12 @@ export default function App() {
     return { totalQty, totalRetailValue, expectedProfit, averageMargin: averageMargin.toFixed(1), lowStockCount };
   }, [products]);
 
-  // Вызов Gemini API нейросети для анализа остатков
   const handleAiAnalysis = async () => {
     setIsAiModalOpen(true);
     setIsAiLoading(true);
     setAiResponse('');
 
-    const apiKey = ""; // Ключ подставляется автоматически вашей платформой
+    const apiKey = ""; 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
     const promptText = `Ты бизнес-аналитик. Проанализируй текущие запасы склада и дай 2-3 практических емких совета.
@@ -540,7 +535,7 @@ export default function App() {
   const fetchHistory = async () => {
     try {
       const res = await fetch(`${API_URL}/history`, {
-        headers: { 'Authorization': currentPassword }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
         const data = await res.json();
@@ -550,28 +545,22 @@ export default function App() {
       showToast('Ошибка при загрузке истории', 'error');
     }
   };
+  
   const formatHistoryValue = (field, value) => {
-    // Если значение пустое, так и пишем
     if (!value || value === 'пусто') return 'пусто';
-    
-    // Если изменилось поле "Категория", ищем её реальное имя в массиве categories
     if (field === 'Категория' || field === 'categoryId') {
       const foundCategory = categories.find(c => c.id === value);
-      // Если нашли — возвращаем имя, если нет — оставляем как есть (или пишем "Удаленная категория")
       return foundCategory ? foundCategory.name : value;
     }
-    
-    // Для остальных полей (Количество, Цена) возвращаем значение без изменений
     return value;
   };
 
   const handleExportHistory = async (limit = null) => {
     try {
-      // Формируем URL с лимитом или без него
       const url = limit ? `${API_URL}/history/export?limit=${limit}` : `${API_URL}/history/export`;
       
       const res = await fetch(url, {
-        headers: { 'Authorization': currentPassword }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
 
       if (res.ok) {
@@ -582,7 +571,6 @@ export default function App() {
           return;
         }
 
-        // Форматируем данные для красивого отображения в Excel
         const excelData = data.map(h => ({
           'Дата и время': new Date(h.created_at + 'Z').toLocaleString('ru-RU'),
           'Товар': h.product_name,
@@ -591,16 +579,14 @@ export default function App() {
           'Новое значение': formatHistoryValue(h.field, h.new_value) || ''
         }));
 
-        // Создаем и скачиваем файл Excel
         const worksheet = XLSX.utils.json_to_sheet(excelData);
         
-        // Настраиваем ширину колонок для удобства чтения
         worksheet['!cols'] = [
-          { wch: 20 }, // Дата
-          { wch: 40 }, // Товар
-          { wch: 20 }, // Параметр
-          { wch: 15 }, // Старое
-          { wch: 15 }  // Новое
+          { wch: 20 },
+          { wch: 40 },
+          { wch: 20 },
+          { wch: 15 },
+          { wch: 15 } 
         ];
 
         const workbook = XLSX.utils.book_new();
@@ -618,34 +604,37 @@ export default function App() {
     }
   };
 
-  // ЭКРАН 1: Форма входа по общему паролю
-  if (!isAuthenticated) {
+  // ЭКРАН 1: Вход
+  if (!token) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 antialiased font-sans">
-        <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-200 max-w-sm w-full space-y-6">
+      <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+        <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-sm space-y-6">
           <div className="text-center space-y-2">
-            <h2 className="text-2xl font-bold text-slate-900">Тайны Потока Складской учет</h2>
-            <p className="text-xs text-slate-500">Вход в защищенную облачную базу данных</p>
+            <h1 className="text-2xl font-bold text-slate-800">Вход в систему</h1>
+            <p className="text-xs text-slate-500">Авторизуйтесь для доступа к складу</p>
           </div>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold uppercase text-slate-500 mb-1">Пароль доступа</label>
-              <input
-                type="password"
-                placeholder="Введите пароль системы"
-                value={passwordInput}
-                onChange={(e) => setPasswordInput(e.target.value)}
-                className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm"
-              />
-            </div>
-            {loginError && <p className="text-xs text-rose-600 font-medium text-center">{loginError}</p>}
+          <div className="space-y-4">
+            <input
+              type="text"
+              placeholder="Логин (например: owner)"
+              value={usernameInput}
+              onChange={(e) => setUsernameInput(e.target.value)}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
+            <input
+              type="password"
+              placeholder="Пароль"
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
             <button
-              type="submit"
-              className="w-full py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition-colors"
+              onClick={handleLogin}
+              className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-colors shadow-md"
             >
-              Подключиться к базе данных
+              Войти
             </button>
-          </form>
+          </div>
         </div>
       </div>
     );
@@ -665,7 +654,9 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-slate-900 leading-tight">Тайны Потока Складской учет</h1>
-              <p className="text-xs text-slate-500">Синхронизированная база данных</p>
+              <p className="text-xs text-slate-500">
+                Роль: {userRole === 'owner' ? 'Владелец' : 'Продавец'}
+              </p>
             </div>
           </div>
           
@@ -677,39 +668,51 @@ export default function App() {
               📊 Экспорт Excel
             </button>
 
-            <label className="px-4 py-2 text-sm font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer transition-colors flex items-center gap-2">
-              📥 Импорт Excel
-              <input 
-                type="file" 
-                accept=".xlsx, .xls, .csv" 
-                onChange={handleImportFromExcel} 
-                className="hidden" 
-              />
-            </label>
+            {/* Скрываем от продавца */}
+            {userRole === 'owner' && (
+              <label className="px-4 py-2 text-sm font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 cursor-pointer transition-colors flex items-center gap-2">
+                📥 Импорт Excel
+                <input 
+                  type="file" 
+                  accept=".xlsx, .xls, .csv" 
+                  onChange={handleImportFromExcel} 
+                  className="hidden" 
+                />
+              </label>
+            )}
 
-            <button
-              onClick={handleAiAnalysis}
-              className="px-4 py-2 text-sm font-semibold text-fuchsia-700 bg-fuchsia-50 border border-fuchsia-200 rounded-lg hover:bg-fuchsia-100 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 transition-colors flex items-center gap-2"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              AI-Аналитик
-            </button>
+            {/* Скрываем от продавца */}
+            {userRole === 'owner' && (
+              <button
+                onClick={handleAiAnalysis}
+                className="px-4 py-2 text-sm font-semibold text-fuchsia-700 bg-fuchsia-50 border border-fuchsia-200 rounded-lg hover:bg-fuchsia-100 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 transition-colors flex items-center gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                AI-Аналитик
+              </button>
+            )}
 
-            <button
-              onClick={() => setIsManageCategoriesOpen(true)}
-              className="px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors flex items-center gap-2"
-            >
-              Категории ({categories.length})
-            </button>
+            {/* Скрываем от продавца */}
+            {userRole === 'owner' && (
+              <button
+                onClick={() => setIsManageCategoriesOpen(true)}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors flex items-center gap-2"
+              >
+                Категории ({categories.length})
+              </button>
+            )}
 
-            <button
-              onClick={() => setIsAddProductOpen(true)}
-              className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-md transition-colors flex items-center gap-2"
-            >
-              Добавить товар
-            </button>
+            {/* Скрываем от продавца */}
+            {userRole === 'owner' && (
+              <button
+                onClick={() => setIsAddProductOpen(true)}
+                className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-md transition-colors flex items-center gap-2"
+              >
+                Добавить товар
+              </button>
+            )}
 
             <button
               onClick={() => setIsScannerOpen(true)}
@@ -747,23 +750,29 @@ export default function App() {
             </div>
           </div>
 
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-4">
-            <div className="p-3 rounded-xl bg-emerald-50 text-emerald-600"><strong>▲</strong></div>
-            <div>
-              <p className="text-xs text-slate-500 font-medium">Чистая прибыль</p>
-              <p className="text-xl font-bold text-slate-900 mt-1">{stats.expectedProfit.toLocaleString()} ₸</p>
-              <p className="text-[10px] text-emerald-600 font-medium mt-0.5">При полной продаже</p>
+          {/* Скрываем от продавца */}
+          {userRole === 'owner' && (
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-4">
+              <div className="p-3 rounded-xl bg-emerald-50 text-emerald-600"><strong>▲</strong></div>
+              <div>
+                <p className="text-xs text-slate-500 font-medium">Чистая прибыль</p>
+                <p className="text-xl font-bold text-slate-900 mt-1">{stats.expectedProfit.toLocaleString()} ₸</p>
+                <p className="text-[10px] text-emerald-600 font-medium mt-0.5">При полной продаже</p>
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-4">
-            <div className="p-3 rounded-xl bg-amber-50 text-amber-600"><strong>%</strong></div>
-            <div>
-              <p className="text-xs text-slate-500 font-medium">Средняя доходность</p>
-              <p className="text-xl font-bold text-slate-900 mt-1">{stats.averageMargin}%</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">Маржинальность склада</p>
+          {/* Скрываем от продавца */}
+          {userRole === 'owner' && (
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-4">
+              <div className="p-3 rounded-xl bg-amber-50 text-amber-600"><strong>%</strong></div>
+              <div>
+                <p className="text-xs text-slate-500 font-medium">Средняя доходность</p>
+                <p className="text-xl font-bold text-slate-900 mt-1">{stats.averageMargin}%</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">Маржинальность склада</p>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center space-x-4">
             <div className={`p-3 rounded-xl ${stats.lowStockCount > 0 ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'}`}><strong>!</strong></div>
@@ -813,7 +822,11 @@ export default function App() {
                   <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase">Категория</th>
                   <th onClick={() => requestSort('quantity')} className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Кол-во {sortBy === 'quantity' && (sortOrder === 'asc' ? '▲' : '▼')}</th>
                   <th onClick={() => requestSort('price')} className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Цена продажи {sortBy === 'price' && (sortOrder === 'asc' ? '▲' : '▼')}</th>
-                  <th onClick={() => requestSort('cost')} className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Себестоимость {sortBy === 'cost' && (sortOrder === 'asc' ? '▲' : '▼')}</th>
+                  
+                  {/* Скрываем колонку Себестоимости от продавца */}
+                  {userRole === 'owner' && (
+                    <th onClick={() => requestSort('cost')} className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase cursor-pointer hover:bg-slate-100">Себестоимость {sortBy === 'cost' && (sortOrder === 'asc' ? '▲' : '▼')}</th>
+                  )}
                   <th className="relative px-6 py-3.5"><span className="sr-only">Действия</span></th>
                 </tr>
               </thead>
@@ -937,24 +950,28 @@ export default function App() {
                         )}
                       </td>
 
-                      {/* Себестоимость с быстрым редактированием */}
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        {inlineEditState.productId === p.id && inlineEditState.field === 'cost' ? (
-                          <div className="flex items-center gap-1">
-                            <input type="number" value={inlineEditState.value} onChange={(e) => setInlineEditState({ ...inlineEditState, value: e.target.value })} className="w-20 border border-indigo-500 rounded text-center p-1" />
-                            <button onClick={() => handleInlineSave(p.id, 'cost')} className="p-1 bg-emerald-500 text-white rounded text-xs">✓</button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center space-x-2">
-                            <span>{p.cost.toLocaleString()} ₸</span>
-                            <button onClick={() => setInlineEditState({ productId: p.id, field: 'cost', value: p.cost.toString() })} className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover:opacity-100 text-xs">✏️</button>
-                          </div>
-                        )}
-                      </td>
+                      {/* Скрываем ячейку Себестоимости от продавца */}
+                      {userRole === 'owner' && (
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          {inlineEditState.productId === p.id && inlineEditState.field === 'cost' ? (
+                            <div className="flex items-center gap-1">
+                              <input type="number" value={inlineEditState.value} onChange={(e) => setInlineEditState({ ...inlineEditState, value: e.target.value })} className="w-20 border border-indigo-500 rounded text-center p-1" />
+                              <button onClick={() => handleInlineSave(p.id, 'cost')} className="p-1 bg-emerald-500 text-white rounded text-xs">✓</button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center space-x-2">
+                              <span>{p.cost.toLocaleString()} ₸</span>
+                              <button onClick={() => setInlineEditState({ productId: p.id, field: 'cost', value: p.cost.toString() })} className="text-slate-400 hover:text-indigo-600 opacity-0 group-hover:opacity-100 text-xs">✏️</button>
+                            </div>
+                          )}
+                        </td>
+                      )}
 
                       {/* Действия */}
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                        <button onClick={() => handleDeleteProduct(p.id, p.name)} className="text-rose-600 hover:text-rose-900 font-medium">Удалить</button>
+                        {userRole === 'owner' && (
+                          <button onClick={() => handleDeleteProduct(p.id, p.name)} className="text-rose-600 hover:text-rose-900 font-medium">Удалить</button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -966,7 +983,7 @@ export default function App() {
       </main>
 
       {/* МОДАЛЬНОЕ ОКНО: Добавить новый товар */}
-      {isAddProductOpen && (
+      {isAddProductOpen && userRole === 'owner' && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
             <h3 className="text-lg font-bold text-slate-900">Новый товар в систему</h3>
@@ -1005,7 +1022,7 @@ export default function App() {
       )}
 
       {/* МОДАЛЬНОЕ ОКНО: Управление категориями */}
-      {isManageCategoriesOpen && (
+      {isManageCategoriesOpen && userRole === 'owner' && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
             <div className="flex justify-between items-center border-b pb-2">
@@ -1044,7 +1061,7 @@ export default function App() {
       )}
 
       {/* МОДАЛЬНОЕ ОКНО: AI-Аналитик */}
-      {isAiModalOpen && (
+      {isAiModalOpen && userRole === 'owner' && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4">
             <h3 className="text-lg font-bold text-slate-900">Бизнес-Аналитик (AI)</h3>
@@ -1128,21 +1145,23 @@ export default function App() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-              {/* Кнопка включения режима редактирования */}
-              <button 
-                onClick={() => {
-                  setIsEditingProduct(!isEditingProduct);
-                  setEditFormData({
-                    name: selectedProductDetails.name,
-                    govCode: selectedProductDetails.govCode || '',
-                    price: selectedProductDetails.price || 0
-                  });
-                }}
-                className="p-2 bg-white border border-slate-200 text-slate-600 rounded-full hover:bg-amber-50 hover:border-amber-300 transition-colors shadow-sm text-sm"
-                title="Редактировать товар"
-              >
-                ✏️
-              </button>
+              {/* Кнопка включения режима редактирования для owner */}
+              {userRole === 'owner' && (
+                <button 
+                  onClick={() => {
+                    setIsEditingProduct(!isEditingProduct);
+                    setEditFormData({
+                      name: selectedProductDetails.name,
+                      govCode: selectedProductDetails.govCode || '',
+                      price: selectedProductDetails.price || 0
+                    });
+                  }}
+                  className="p-2 bg-white border border-slate-200 text-slate-600 rounded-full hover:bg-amber-50 hover:border-amber-300 transition-colors shadow-sm text-sm"
+                  title="Редактировать товар"
+                >
+                  ✏️
+                </button>
+              )}
               {/* Кнопка закрытия */}
               <button 
                 onClick={() => {
@@ -1159,7 +1178,7 @@ export default function App() {
             {/* Тело карточки */}
             <div className="p-6 space-y-6">
               {/* БЛОК РЕДАКТИРОВАНИЯ (показывается только при нажатии на карандаш) */}
-              {isEditingProduct && (
+              {isEditingProduct && userRole === 'owner' && (
                 <div className="bg-amber-50/70 p-5 rounded-2xl border border-amber-200 space-y-4 animate-fade-in">
                   <h3 className="text-xs font-bold text-amber-700 uppercase tracking-widest">Редактирование данных</h3>
                   
@@ -1207,7 +1226,7 @@ export default function App() {
                             method: 'PUT',
                             headers: { 
                               'Content-Type': 'application/json', 
-                              'Authorization': currentPassword 
+                              'Authorization': `Bearer ${token}` 
                             },
                             body: JSON.stringify(editFormData)
                           });
@@ -1257,7 +1276,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Блок: AI-Аналитика продаж */}
+              {/* Блок: Статистика продаж */}
               <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Статистика продаж</h3>
                 <div className="grid grid-cols-2 gap-y-5 gap-x-4">
@@ -1265,22 +1284,27 @@ export default function App() {
                     <div className="text-xs text-slate-500 mb-0.5">Уже продано</div>
                     <div className="text-xl font-bold text-slate-800">{selectedProductDetails.sold_quantity || 0} шт.</div>
                   </div>
-                  <div>
-                    <div className="text-xs text-slate-500 mb-0.5">Чистая прибыль (Факт)</div>
-                    <div className="text-xl font-bold text-emerald-600">+{(selectedProductDetails.realized_profit || 0).toLocaleString()} ₸</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500 mb-0.5">Маржинальность</div>
-                    <div className="text-sm font-semibold text-indigo-600 bg-indigo-100/50 px-2 py-0.5 rounded inline-block">
-                      {getProfitMetrics(selectedProductDetails.price, selectedProductDetails.cost).marginPercent}%
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500 mb-0.5">Потенциал (с остатка)</div>
-                    <div className="text-sm font-semibold text-slate-600">
-                      {(selectedProductDetails.quantity * (selectedProductDetails.price - selectedProductDetails.cost)).toLocaleString()} ₸
-                    </div>
-                  </div>
+                  {/* Скрываем финансовую информацию от продавца */}
+                  {userRole === 'owner' && (
+                    <>
+                      <div>
+                        <div className="text-xs text-slate-500 mb-0.5">Чистая прибыль (Факт)</div>
+                        <div className="text-xl font-bold text-emerald-600">+{(selectedProductDetails.realized_profit || 0).toLocaleString()} ₸</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-500 mb-0.5">Маржинальность</div>
+                        <div className="text-sm font-semibold text-indigo-600 bg-indigo-100/50 px-2 py-0.5 rounded inline-block">
+                          {getProfitMetrics(selectedProductDetails.price, selectedProductDetails.cost).marginPercent}%
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-500 mb-0.5">Потенциал (с остатка)</div>
+                        <div className="text-sm font-semibold text-slate-600">
+                          {(selectedProductDetails.quantity * (selectedProductDetails.price - selectedProductDetails.cost)).toLocaleString()} ₸
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
               {/* Блок прямой продажи из карточки */}
@@ -1313,7 +1337,7 @@ export default function App() {
                       try {
                         const res = await fetch(`${API_URL}/products/${selectedProductDetails.id}/sell`, {
                           method: 'POST',
-                          headers: { 'Content-Type': 'application/json', 'Authorization': currentPassword },
+                          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                           body: JSON.stringify({ quantityToSell: qtyToSell })
                         });
                         
@@ -1334,7 +1358,7 @@ export default function App() {
                   </button>
                 </div>
               </div>
-              {/* Блок: Коды и кнопка QR (перенесенная из таблицы) */}
+              {/* Блок: Коды и кнопка QR */}
               <div className="flex justify-between items-center bg-slate-50 px-5 py-4 rounded-2xl border border-slate-200">
                 <div>
                   <div className="text-xs text-slate-400 font-mono"><span className="text-slate-500 font-semibold">ВНУТ:</span> {selectedProductDetails.internalCode || '—'}</div>
@@ -1343,8 +1367,8 @@ export default function App() {
                 <button 
                   onClick={() => {
                     const prod = selectedProductDetails;
-                    setSelectedProductDetails(null); // Скрываем карточку
-                    setSelectedProductForQR(prod); // Показываем QR
+                    setSelectedProductDetails(null); 
+                    setSelectedProductForQR(prod); 
                   }}
                   className="flex items-center gap-2 bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-100 hover:border-slate-400 transition-all shadow-sm"
                 >
@@ -1369,14 +1393,12 @@ export default function App() {
                 <div className="text-white text-lg font-bold">Наведите камеру на штрих-код</div>
                 <button 
                   onClick={async () => {
-                    // Запрашиваем разрешение и запускаем сканирование
                     const status = await BarcodeScanner.requestPermissions();
                     if (status.camera !== 'granted') {
                       showToast('Нет доступа к камере', 'error');
                       return;
                     }
                     
-                    // Прячем интерфейс приложения, чтобы камера сработала нативно
                     document.querySelector('body').classList.add('scanner-active');
                     
                     try {
