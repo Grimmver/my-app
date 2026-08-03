@@ -549,6 +549,20 @@ export default function App() {
       showToast('Ошибка при загрузке истории', 'error');
     }
   };
+  const formatHistoryValue = (field, value) => {
+    // Если значение пустое, так и пишем
+    if (!value || value === 'пусто') return 'пусто';
+    
+    // Если изменилось поле "Категория", ищем её реальное имя в массиве categories
+    if (field === 'Категория' || field === 'categoryId') {
+      const foundCategory = categories.find(c => c.id === value);
+      // Если нашли — возвращаем имя, если нет — оставляем как есть (или пишем "Удаленная категория")
+      return foundCategory ? foundCategory.name : value;
+    }
+    
+    // Для остальных полей (Количество, Цена) возвращаем значение без изменений
+    return value;
+  };
 
   const handleExportHistory = async (limit = null) => {
     try {
@@ -572,8 +586,8 @@ export default function App() {
           'Дата и время': new Date(h.created_at + 'Z').toLocaleString('ru-RU'),
           'Товар': h.product_name,
           'Измененный параметр': fieldTranslations[h.field] || h.field,
-          'Старое значение': h.old_value || '',
-          'Новое значение': h.new_value || ''
+          'Старое значение': formatHistoryValue(h.field, h.old_value) || '',
+          'Новое значение': formatHistoryValue(h.field, h.new_value) || ''
         }));
 
         // Создаем и скачиваем файл Excel
@@ -1086,7 +1100,7 @@ export default function App() {
                         <span className="font-medium text-indigo-600">
                           {fieldTranslations[h.field] || h.field}
                         </span>{' '}
-                        с <span className="bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded line-through">{h.old_value || 'пусто'}</span> на <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">{h.new_value || 'пусто'}</span>
+                        с <span className="bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded line-through">{formatHistoryValue(h.field, h.old_value) || 'пусто'}</span> на <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">{formatHistoryValue(h.field, h.new_value) || 'пусто'}</span>
                       </div>
                     </div>
                   ))}
