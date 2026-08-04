@@ -252,6 +252,7 @@ export default function App() {
       if (userRole === 'owner') {
         baseObj['Себестоимость (₸)'] = p.cost;
         baseObj['Ожидаемая прибыль (₸)'] = (p.price - p.cost) * p.quantity;
+        baseObj['Фактическая прибыль (₸)'] = p.realized_profit || 0;
       }
       return baseObj;
     });
