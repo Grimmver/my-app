@@ -619,6 +619,11 @@ export default function App() {
             <h1 className="text-2xl font-bold text-slate-800">Вход в систему</h1>
             <p className="text-xs text-slate-500">Авторизуйтесь для доступа к складу</p>
           </div>
+          {notification && (
+            <div className={`p-3 rounded-xl border font-medium text-sm text-center ${notification.type === 'error' ? 'bg-red-50 text-red-800 border-red-200' : 'bg-emerald-50 text-emerald-800 border-emerald-200'}`}>
+              {notification.message}
+            </div>
+          )}
           <div className="space-y-4">
             <input
               type="text"
