@@ -1244,31 +1244,37 @@ export default function App() {
                         }
 
                         try {
-                          const res = await fetch(`${API_URL}/products/${selectedProductDetails.id}`, {
-                            method: 'PUT',
-                            headers: { 
-                              'Content-Type': 'application/json', 
-                              'Authorization': `Bearer ${token}` 
-                            },
-                            body: JSON.stringify(editFormData)
-                          });
+                          // Отправляем каждое измененное поле в формате, который ожидает сервер { field, value }
+                          const updates = [
+                            { field: 'name', value: editFormData.name.trim() },
+                            { field: 'govCode', value: editFormData.govCode.trim() },
+                            { field: 'price', value: Number(editFormData.price) }
+                          ];
 
-                          if (res.ok) {
-                            const updated = await res.json();
-                            showToast('Товар успешно обновлен', 'success');
-                            
-                            // Обновляем данные в открытой карточке и закрываем форму
-                            setSelectedProductDetails({ 
-                              ...selectedProductDetails, 
-                              name: updated.name,
-                              govCode: updated.gov_code,
-                              price: parseFloat(updated.price)
+                          for (const update of updates) {
+                            const res = await fetch(`${API_URL}/products/${selectedProductDetails.id}`, {
+                              method: 'PUT',
+                              headers: { 
+                                'Content-Type': 'application/json', 
+                                'Authorization': `Bearer ${token}` 
+                              },
+                              body: JSON.stringify(update)
                             });
-                            setIsEditingProduct(false);
-                            fetchData(); // Обновляем главный список
-                          } else {
-                            showToast('Ошибка при сохранении', 'error');
+
+                            if (!res.ok) throw new Error('Ошибка сохранения');
                           }
+
+                          showToast('Товар успешно обновлен', 'success');
+                          
+                          // Обновляем состояние открытой карточки с правильными ключами Turso
+                          setSelectedProductDetails({ 
+                            ...selectedProductDetails, 
+                            name: editFormData.name.trim(),
+                            govCode: editFormData.govCode.trim(),
+                            price: Number(editFormData.price)
+                          });
+                          setIsEditingProduct(false);
+                          fetchData(); 
                         } catch (err) {
                           showToast('Ошибка сети', 'error');
                         }
