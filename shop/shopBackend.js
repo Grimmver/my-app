@@ -19,14 +19,8 @@ export function setupShopRoutes(app, db) {
   app.get('/api/shop/catalog', async (req, res) => {
     try {
       // Загружаем товары (без раскрытия закупочной себестоимости cost для обычных покупателей)
-      const productsResult = await db.execute(`
-        SELECT id, name, internalCode, govCode, quantity, price, categoryId, sold_quantity, description, images
-        FROM products
-      `);
-      const categoriesResult = await db.execute(`
-        SELECT id, name, color
-        FROM categories
-      `);
+      const productsResult = await db.execute('SELECT * FROM products');
+      const categoriesResult = await db.execute('SELECT * FROM categories');
 
       res.json({
         products: productsResult.rows.map((row) => ({

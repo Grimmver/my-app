@@ -8,8 +8,13 @@
  * 3. Работу ИИ-помощника для умного подбора товаров из актуального каталога БД
  */
 
-// Базовый адрес сервера (совпадает с настройкой в складском приложении src/App.jsx)
-export const API_URL = 'http://localhost:3000/api';
+// Автоматическое определение адреса сервера:
+// Локально — http://localhost:3000/api, на Render (или любом домене) — /api того же сервера
+export const API_URL =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:3000/api'
+    : '/api';
 
 // Демо-товары в стиле aknyet.kz (используются ТОЛЬКО если локальный сервер server.js выключен,
 // чтобы интерфейс магазина всегда можно было протестировать)

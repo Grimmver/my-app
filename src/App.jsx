@@ -3,10 +3,13 @@ import * as XLSX from 'xlsx';
 import { QRCodeCanvas } from 'qrcode.react';
 import { BarcodeScanner } from '@capacitor-mlkit/barcode-scanning';
 
-// Если вы запускаете локально, оставьте http://localhost:3000
-// При деплое на Render, замените на URL вашего веб-сервиса
-const API_URL = "https://my-app-0m5k.onrender.com/api"; 
-//const API_URL = "http://localhost:3000/api";
+// Автоматическое определение адреса API:
+// Локально используется http://localhost:3000/api, а на Render (и любом хостинге) — относительный путь /api
+const API_URL =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:3000/api'
+    : '/api';
 
 // Настройки Cloudinary для загрузки фотографий товаров (Unsigned Upload)
 // Считываются из переменных окружения CLOUDINARY_CLOUD_NAME и CLOUDINARY_UPLOAD_PRESET
