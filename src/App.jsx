@@ -8,7 +8,42 @@ import { BarcodeScanner } from '@capacitor-mlkit/barcode-scanning';
 const API_URL = "https://my-app-0m5k.onrender.com/api"; 
 //const API_URL = "http://localhost:3000/api";
 
-export default function App() {
+// Настройки Cloudinary для загрузки фотографий товаров (Unsigned Upload)
+// Считываются из переменных окружения CLOUDINARY_CLOUD_NAME и CLOUDINARY_UPLOAD_PRESET
+const CLOUDINARY_CLOUD_NAME =
+  import.meta.env.CLOUDINARY_CLOUD_NAME ||
+  import.meta.env.VITE_CLOUDINARY_CLOUD_NAME ||
+  "";
+const CLOUDINARY_UPLOAD_PRESET =
+  import.meta.env.CLOUDINARY_UPLOAD_PRESET ||
+  import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET ||
+  "";
+
+// Вспомогательная функция для безопасного чтения массива ссылок на фото из БД
+export function parseProductImages(imagesRaw) {
+  if (!imagesRaw) return [];
+  if (Array.isArray(imagesRaw)) {
+    return imagesRaw.filter((url) => typeof url === 'string' && url.trim() !== '');
+  }
+  if (typeof imagesRaw === 'string') {
+    const trimmed = imagesRaw.trim();
+    if (!trimmed || trimmed === '[]') return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((url) => typeof url === 'string' && url.trim() !== '');
+      }
+    } catch {
+      // Если в поле записана одиночная ссылка строкой
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
+        return [trimmed];
+      }
+    }
+  }
+  return [];
+}
+
+export default function App({ onSwitchToShop }) {
   // --- Состояния авторизации ---
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
@@ -41,8 +76,26 @@ export default function App() {
   const [lastScanned, setLastScanned] = useState("Наведите на код...");
   const [selectedProductDetails, setSelectedProductDetails] = useState(null);
   const [isEditingProduct, setIsEditingProduct] = useState(false);
-  const [editFormData, setEditFormData] = useState({ name: '', govCode: '', price: 0 });
-  
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    govCode: '',
+    price: 0,
+    description: '',
+    images: []
+  });
+
+  // --- Состояния галереи фото и загрузки в Cloudinary внутри карточки товара ---
+  const [activePhotoIndex, setActivePhotoIndex] = useState(0);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [manualPhotoUrl, setManualPhotoUrl] = useState('');
+  const [cloudinaryCloudName, setCloudinaryCloudName] = useState(
+    () => CLOUDINARY_CLOUD_NAME || localStorage.getItem('cloudinary_cloud_name') || ''
+  );
+  const [cloudinaryUploadPreset, setCloudinaryUploadPreset] = useState(
+    () => CLOUDINARY_UPLOAD_PRESET || localStorage.getItem('cloudinary_upload_preset') || ''
+  );
+  const [isCloudinarySettingsOpen, setIsCloudinarySettingsOpen] = useState(false);
+
   // --- Формы создания ---
   const [newProduct, setNewProduct] = useState({
     name: '',
@@ -51,7 +104,9 @@ export default function App() {
     quantity: 0,
     price: 0,
     cost: 0,
-    categoryId: ''
+    categoryId: '',
+    description: '',
+    images: []
   });
   const [newCategoryName, setNewCategoryName] = useState('');
 
@@ -59,7 +114,6 @@ export default function App() {
   const [inlineEditState, setInlineEditState] = useState({
     productId: null,
     field: null,
-    //field: null, // 'quantity' | 'price' | 'cost' | 'categoryId' | 'internalCode' | 'govCode'
     value: ''
   });
 
@@ -70,10 +124,150 @@ export default function App() {
     }
   }, [token]);
 
+  // Сбрасываем индекс выбранного фото при открытии другой карточки товара
+  useEffect(() => {
+    setActivePhotoIndex(0);
+    setManualPhotoUrl('');
+  }, [selectedProductDetails?.id]);
+
   // Функция всплывающих уведомлений
   const showToast = (message, type = 'success') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 3000);
+  };
+
+  // Сохранение настроек Cloudinary в localStorage
+  const handleSaveCloudinarySettings = () => {
+    localStorage.setItem('cloudinary_cloud_name', cloudinaryCloudName.trim());
+    localStorage.setItem('cloudinary_upload_preset', cloudinaryUploadPreset.trim());
+    setIsCloudinarySettingsOpen(false);
+    showToast('Настройки Cloudinary сохранены', 'success');
+  };
+
+  // Загрузка одного или нескольких фото в Cloudinary в черновик редактирования карточки
+  // (запись в базу данных происходит только при нажатии кнопки «Сохранить изменения»)
+  const handleUploadPhotosToCloudinary = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0 || !selectedProductDetails) return;
+
+    const cloudName = cloudinaryCloudName.trim();
+    const uploadPreset = cloudinaryUploadPreset.trim();
+
+    if (!cloudName || !uploadPreset) {
+      setIsCloudinarySettingsOpen(true);
+      showToast(
+        'Для загрузки в Cloudinary укажите Cloud Name и Upload Preset (Unsigned)',
+        'error'
+      );
+      e.target.value = '';
+      return;
+    }
+
+    setIsUploadingPhoto(true);
+    try {
+      const uploadedUrls = [];
+
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('upload_preset', uploadPreset);
+
+        const uploadRes = await fetch(
+          `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+          {
+            method: 'POST',
+            body: formData
+          }
+        );
+
+        const uploadData = await uploadRes.json();
+        if (!uploadRes.ok || !uploadData.secure_url) {
+          throw new Error(
+            uploadData?.error?.message ||
+              'Ошибка загрузки в Cloudinary. Проверьте Cloud Name и Unsigned Upload Preset.'
+          );
+        }
+
+        uploadedUrls.push(uploadData.secure_url);
+      }
+
+      const currentImages = editFormData.images || [];
+      const updatedImages = [...currentImages, ...uploadedUrls];
+
+      // Обновляем только локальный черновик формы редактирования (без записи в БД до нажатия «Сохранить»)
+      setEditFormData((prev) => ({
+        ...prev,
+        images: updatedImages
+      }));
+
+      // Переключаем предпросмотр на первое из только что загруженных фото
+      setActivePhotoIndex(currentImages.length);
+      showToast(
+        uploadedUrls.length === 1
+          ? 'Фото загружено! Нажмите «Сохранить изменения», чтобы записать в БД.'
+          : `Загружено ${uploadedUrls.length} фото! Нажмите «Сохранить изменения», чтобы записать в БД.`,
+        'success'
+      );
+    } catch (err) {
+      showToast(err.message || 'Ошибка при загрузке фото в Cloudinary', 'error');
+    } finally {
+      setIsUploadingPhoto(false);
+      e.target.value = '';
+    }
+  };
+
+  // Добавление фото по прямой ссылке в черновик редактирования
+  const handleAddPhotoByUrl = () => {
+    const trimmedUrl = manualPhotoUrl.trim();
+    if (!trimmedUrl || !selectedProductDetails) return;
+
+    if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
+      showToast('Введите корректную ссылку (начинающуюся с https://)', 'error');
+      return;
+    }
+
+    const currentImages = editFormData.images || [];
+    const updatedImages = [...currentImages, trimmedUrl];
+
+    setEditFormData((prev) => ({
+      ...prev,
+      images: updatedImages
+    }));
+    setManualPhotoUrl('');
+    setActivePhotoIndex(updatedImages.length - 1);
+    showToast('Ссылка добавлена! Нажмите «Сохранить изменения», чтобы записать в БД.', 'success');
+  };
+
+  // Удаление фото из черновика редактирования карточки товара
+  const handleRemovePhoto = (indexToRemove) => {
+    if (!selectedProductDetails) return;
+    const currentImages = editFormData.images || [];
+    const updatedImages = currentImages.filter((_, idx) => idx !== indexToRemove);
+
+    setEditFormData((prev) => ({
+      ...prev,
+      images: updatedImages
+    }));
+    setActivePhotoIndex((prev) =>
+      updatedImages.length === 0 ? 0 : Math.min(prev, updatedImages.length - 1)
+    );
+  };
+
+  // Сделать выбранное дополнительное фото основным в черновике редактирования
+  const handleMakePrimaryPhoto = (indexToPromote) => {
+    if (!selectedProductDetails || indexToPromote <= 0) return;
+    const currentImages = editFormData.images || [];
+    if (indexToPromote >= currentImages.length) return;
+
+    const chosen = currentImages[indexToPromote];
+    const rest = currentImages.filter((_, idx) => idx !== indexToPromote);
+    const updatedImages = [chosen, ...rest];
+
+    setEditFormData((prev) => ({
+      ...prev,
+      images: updatedImages
+    }));
+    setActivePhotoIndex(0);
   };
 
   // Метод получения всех данных с сервера
@@ -86,6 +280,12 @@ export default function App() {
         const data = await res.json();
         setProducts(data.products || []);
         setCategories(data.categories || []);
+        if (data.cloudinary?.cloudName) {
+          setCloudinaryCloudName(data.cloudinary.cloudName);
+        }
+        if (data.cloudinary?.uploadPreset) {
+          setCloudinaryUploadPreset(data.cloudinary.uploadPreset);
+        }
       } else if (res.status === 401 || res.status === 403) {
         handleLogout();
       }
@@ -166,7 +366,9 @@ export default function App() {
       govCode: newProduct.govCode.trim() || 'GOV-' + Math.floor(10000000 + Math.random() * 90000000),
       quantity: Number(newProduct.quantity) || 0,
       price: Number(newProduct.price) || 0,
-      cost: Number(newProduct.cost) || 0
+      cost: Number(newProduct.cost) || 0,
+      description: (newProduct.description || '').trim(),
+      images: Array.isArray(newProduct.images) ? newProduct.images : []
     };
 
     try {
@@ -181,7 +383,17 @@ export default function App() {
 
       if (res.ok) {
         setIsAddProductOpen(false);
-        setNewProduct({ name: '', internalCode: '', govCode: '', quantity: 0, price: 0, cost: 0, categoryId: categories[0]?.id || '' });
+        setNewProduct({
+          name: '',
+          internalCode: '',
+          govCode: '',
+          quantity: 0,
+          price: 0,
+          cost: 0,
+          categoryId: categories[0]?.id || '',
+          description: '',
+          images: []
+        });
         showToast(`Товар "${finalProduct.name}" успешно добавлен в базу`);
         fetchData();
       }
@@ -400,7 +612,8 @@ export default function App() {
     const matchesSearch = 
       p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.internalCode?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.govCode?.toLowerCase().includes(searchQuery.toLowerCase());
+      p.govCode?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.description?.toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchesCategory = 
       selectedCategoryFilter === 'all' || 
@@ -530,7 +743,9 @@ export default function App() {
     cost: 'Себестоимость',
     categoryId: 'Категория',
     internalCode: 'Внутренний код',
-    govCode: 'Гос. код'
+    govCode: 'Гос. код',
+    description: 'Описание',
+    images: 'Фотографии'
   };
 
   const fetchHistory = async () => {
@@ -547,11 +762,20 @@ export default function App() {
     }
   };
   
-  const formatHistoryValue = (field, value) => {
+  const formatHistoryValue = (field, value, isOld = false) => {
+    if (field === 'description' || field === 'Описание') {
+      const hasText = Boolean(value && String(value).trim() && value !== 'пусто');
+      if (!hasText) return 'пустой текст';
+      return isOld ? 'заполненный текст' : 'новое';
+    }
     if (!value || value === 'пусто') return 'пусто';
     if (field === 'Категория' || field === 'categoryId') {
       const foundCategory = categories.find(c => c.id === value);
       return foundCategory ? foundCategory.name : value;
+    }
+    if (field === 'images' || field === 'Фотографии') {
+      const imgs = parseProductImages(value);
+      return imgs.length > 0 ? `${imgs.length} фото` : 'нет фото';
     }
     return value;
   };
@@ -575,17 +799,16 @@ export default function App() {
         // Форматируем данные для красивого отображения в Excel
         const excelData = data.map(h => ({
           'Дата и время': new Date(h.created_at + 'Z').toLocaleString('ru-RU'),
-          'Пользователь': h.user_name || 'owner', // Добавили эту строчку
+          'Пользователь': h.user_name || 'owner',
           'Товар': h.product_name,
           'Измененный параметр': fieldTranslations[h.field] || h.field,
-          'Старое значение': formatHistoryValue(h.field, h.old_value) || '',
-          'Новое значение': formatHistoryValue(h.field, h.new_value) || ''
+          'Старое значение': formatHistoryValue(h.field, h.old_value, true) || '',
+          'Новое значение': formatHistoryValue(h.field, h.new_value, false) || ''
         }));
 
         // Создаем и скачиваем файл Excel
         const worksheet = XLSX.utils.json_to_sheet(excelData);
         
-        // Настраиваем ширину колонок (стало 6 колонок)
         worksheet['!cols'] = [
           { wch: 20 }, // Дата
           { wch: 15 }, // Пользователь
@@ -610,6 +833,17 @@ export default function App() {
     }
   };
 
+  // Список фото для открытой карточки товара
+  const currentCardImages = selectedProductDetails
+    ? isEditingProduct
+      ? editFormData.images
+      : parseProductImages(selectedProductDetails.images)
+    : [];
+  const safeActivePhotoIndex =
+    currentCardImages.length > 0
+      ? Math.min(activePhotoIndex, currentCardImages.length - 1)
+      : 0;
+
   // ЭКРАН 1: Вход
   if (!token) {
     return (
@@ -627,7 +861,7 @@ export default function App() {
           <div className="space-y-4">
             <input
               type="text"
-              placeholder="Логин (например: login)"
+              placeholder="Логин (например: owner)"
               value={usernameInput}
               onChange={(e) => setUsernameInput(e.target.value)}
               className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -637,6 +871,7 @@ export default function App() {
               placeholder="Пароль"
               value={passwordInput}
               onChange={(e) => setPasswordInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
               className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
             />
             <button
@@ -645,6 +880,15 @@ export default function App() {
             >
               Войти
             </button>
+            {onSwitchToShop && (
+              <button
+                type="button"
+                onClick={onSwitchToShop}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors text-xs"
+              >
+                🛍️ Перейти на витрину магазина
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -672,6 +916,15 @@ export default function App() {
           </div>
           
           <div className="flex flex-wrap items-center gap-2">
+            {onSwitchToShop && (
+              <button
+                onClick={onSwitchToShop}
+                className="px-4 py-2 text-sm font-semibold text-sky-700 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 transition-colors flex items-center gap-2"
+              >
+                🛍️ Витрина магазина
+              </button>
+            )}
+
             <button
               onClick={handleExportToExcel}
               className="px-4 py-2 text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors flex items-center gap-2"
@@ -806,7 +1059,7 @@ export default function App() {
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between gap-4">
           <input
             type="text"
-            placeholder="Поиск по наименованию, внутреннему или гос. коду..."
+            placeholder="Поиск по наименованию, описанию, внутреннему или гос. коду..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="px-4 py-2 w-full bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white"
@@ -1025,6 +1278,17 @@ export default function App() {
                 </select>
               </div>
 
+              <div>
+                <label className="block text-xs font-semibold uppercase text-slate-500 mb-1">Описание товара</label>
+                <textarea
+                  rows={2}
+                  placeholder="Краткое или подробное описание товара..."
+                  value={newProduct.description}
+                  onChange={(e) => setNewProduct({ ...newProduct, description: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none"
+                />
+              </div>
+
               <div className="grid grid-cols-3 gap-3">
                 <input type="number" placeholder="Кол-во" value={newProduct.quantity || ''} onChange={(e) => setNewProduct({ ...newProduct, quantity: Number(e.target.value) })} className="w-full px-2 py-2 border border-slate-300 rounded-xl text-center" />
                 <input type="number" placeholder="Цена (₸)" value={newProduct.price || ''} onChange={(e) => setNewProduct({ ...newProduct, price: Number(e.target.value) })} className="w-full px-2 py-2 border border-slate-300 rounded-xl text-center" />
@@ -1127,23 +1391,51 @@ export default function App() {
                 <p className="text-slate-500 text-center">История пока пуста.</p>
               ) : (
                 <div className="space-y-4">
-                  {history.map((h) => (
-                    <div key={h.id} className="text-sm bg-slate-50 p-3 rounded-lg border border-slate-100">
-                      <div className="text-xs text-slate-400 mb-1 flex justify-between items-center">
-                        <span>{new Date(h.created_at + 'Z').toLocaleString('ru-RU')}</span>
-                        <span className="font-medium text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-md">
-                          👤 {h.user_name || 'owner'}
-                        </span>
+                  {history.map((h) => {
+                    const isDescriptionField = h.field === 'description' || h.field === 'Описание';
+                    const hadOldDesc = Boolean(h.old_value && String(h.old_value).trim() && h.old_value !== 'пусто');
+                    const hasNewDesc = Boolean(h.new_value && String(h.new_value).trim() && h.new_value !== 'пусто');
+
+                    return (
+                      <div key={h.id} className="text-sm bg-slate-50 p-3 rounded-lg border border-slate-100">
+                        <div className="text-xs text-slate-400 mb-1 flex justify-between items-center">
+                          <span>{new Date(h.created_at + 'Z').toLocaleString('ru-RU')}</span>
+                          <span className="font-medium text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-md">
+                            👤 {h.user_name || 'owner'}
+                          </span>
+                        </div>
+                        {isDescriptionField ? (
+                          <div>
+                            <span className="font-semibold text-slate-800">{h.product_name}</span> — изменено{' '}
+                            <span className="font-medium text-indigo-600">Описание</span>:{' '}
+                            {!hadOldDesc && hasNewDesc ? (
+                              <>
+                                с <span className="bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded line-through">пустого текста</span> на{' '}
+                                <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">новое</span>
+                              </>
+                            ) : hadOldDesc && !hasNewDesc ? (
+                              <>
+                                с <span className="bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded line-through">заполненного</span> на{' '}
+                                <span className="bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded">пустой текст</span>
+                              </>
+                            ) : (
+                              <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">
+                                обновлено на новое
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <div>
+                            <span className="font-semibold text-slate-800">{h.product_name}</span> изменилось{' '}
+                            <span className="font-medium text-indigo-600">
+                              {fieldTranslations[h.field] || h.field}
+                            </span>{' '}
+                            с <span className="bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded line-through">{formatHistoryValue(h.field, h.old_value, true) || 'пусто'}</span> на <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">{formatHistoryValue(h.field, h.new_value, false) || 'пусто'}</span>
+                          </div>
+                        )}
                       </div>
-                      <div>
-                        <span className="font-semibold text-slate-800">{h.product_name}</span> изменилось{' '}
-                        <span className="font-medium text-indigo-600">
-                          {fieldTranslations[h.field] || h.field}
-                        </span>{' '}
-                        с <span className="bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded line-through">{formatHistoryValue(h.field, h.old_value) || 'пусто'}</span> на <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">{formatHistoryValue(h.field, h.new_value) || 'пусто'}</span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1154,55 +1446,296 @@ export default function App() {
       {/* МОДАЛЬНОЕ ОКНО: Карточка товара */}
       {selectedProductDetails && (
         <div className="fixed inset-0 z-[60] bg-black/60 flex flex-col items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[95vh] overflow-hidden flex flex-col relative animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl max-h-[95vh] overflow-hidden flex flex-col relative animate-fade-in">
             
             {/* Шапка карточки */}
-            <div className="p-6 bg-slate-50 border-b border-slate-100 flex justify-between items-start">
+            <div className="p-6 bg-slate-50 border-b border-slate-100 flex justify-between items-start gap-3">
               <div>
                 <h2 className="text-2xl font-bold text-slate-800 leading-tight">{selectedProductDetails.name}</h2>
-                <div className="text-sm font-semibold text-slate-500 mt-2 flex items-center gap-2">
-                  <span className="px-2 py-0.5 bg-slate-200 rounded-md">
+                <div className="text-sm font-semibold text-slate-500 mt-2 flex flex-wrap items-center gap-2">
+                  <span className="px-2.5 py-0.5 bg-slate-200 rounded-md text-xs">
                     {categories.find(c => c.id === selectedProductDetails.categoryId)?.name || 'Без категории'}
                   </span>
+                  {currentCardImages.length > 0 && (
+                    <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-xs font-semibold flex items-center gap-1">
+                      <span>🖼️</span>
+                      <span>Фото в БД: {currentCardImages.length} шт.</span>
+                    </span>
+                  )}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-              {/* Кнопка включения режима редактирования для owner */}
-              {userRole === 'owner' && (
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Кнопка включения режима редактирования для owner */}
+                {userRole === 'owner' && (
+                  <button 
+                    onClick={() => {
+                      const nextEdit = !isEditingProduct;
+                      setIsEditingProduct(nextEdit);
+                      if (nextEdit) {
+                        setEditFormData({
+                          name: selectedProductDetails.name || '',
+                          govCode: selectedProductDetails.govCode || '',
+                          price: selectedProductDetails.price || 0,
+                          description: selectedProductDetails.description || '',
+                          images: parseProductImages(selectedProductDetails.images)
+                        });
+                      }
+                    }}
+                    className={`p-2 border rounded-full transition-colors shadow-sm text-sm ${
+                      isEditingProduct
+                        ? 'bg-amber-500 border-amber-600 text-white'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-amber-50 hover:border-amber-300'
+                    }`}
+                    title="Редактировать товар (описание, фото, цену, код)"
+                  >
+                    ✏️
+                  </button>
+                )}
+                {/* Кнопка закрытия */}
                 <button 
                   onClick={() => {
-                    setIsEditingProduct(!isEditingProduct);
-                    setEditFormData({
-                      name: selectedProductDetails.name,
-                      govCode: selectedProductDetails.govCode || '',
-                      price: selectedProductDetails.price || 0
-                    });
-                  }}
-                  className="p-2 bg-white border border-slate-200 text-slate-600 rounded-full hover:bg-amber-50 hover:border-amber-300 transition-colors shadow-sm text-sm"
-                  title="Редактировать товар"
+                    setSelectedProductDetails(null);
+                    setIsEditingProduct(false);
+                  }} 
+                  className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:bg-slate-100 hover:text-slate-800 transition-colors shadow-sm"
                 >
-                  ✏️
+                  ✖
                 </button>
-              )}
-              {/* Кнопка закрытия */}
-              <button 
-                onClick={() => {
-                  setSelectedProductDetails(null);
-                  setIsEditingProduct(false);
-                }} 
-                className="p-2 bg-white border border-slate-200 text-slate-500 rounded-full hover:bg-slate-100 hover:text-slate-800 transition-colors shadow-sm"
-              >
-                ✖
-              </button>
+              </div>
             </div>
-          </div>
             
             {/* Тело карточки */}
             <div className="p-6 space-y-6 overflow-y-auto flex-1">
-              {/* БЛОК РЕДАКТИРОВАНИЯ (показывается только при нажатии на карандаш) */}
+              {/* БЛОК ФОТОГРАФИЙ ТОВАРА (основное фото + дополнительные фото в меньшем формате рядом) */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                    Фотографии товара
+                  </h3>
+                  {currentCardImages.length > 0 && (
+                    isEditingProduct ? (
+                      <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                        Предпросмотр ({safeActivePhotoIndex + 1} из {currentCardImages.length}) — нажмите «Сохранить»
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                        ✓ Сохранено в БД ({safeActivePhotoIndex + 1} из {currentCardImages.length})
+                      </span>
+                    )
+                  )}
+                </div>
+
+                {currentCardImages.length > 0 ? (
+                  <div className="flex flex-col sm:flex-row gap-3 items-stretch">
+                    {/* Основное (выбранное) фото */}
+                    <div className="relative flex-1 h-64 sm:h-72 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center group">
+                      <img
+                        src={currentCardImages[safeActivePhotoIndex]}
+                        alt={`${selectedProductDetails.name} — фото ${safeActivePhotoIndex + 1}`}
+                        className="w-full h-full object-contain bg-white"
+                      />
+
+                      {safeActivePhotoIndex === 0 && (
+                        <span className="absolute top-3 left-3 px-2.5 py-1 rounded-lg bg-black/65 text-white text-[11px] font-semibold backdrop-blur-xs">
+                          Основное фото
+                        </span>
+                      )}
+
+                      {userRole === 'owner' && isEditingProduct && (
+                        <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                          {safeActivePhotoIndex > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleMakePrimaryPhoto(safeActivePhotoIndex)}
+                              className="px-2.5 py-1 rounded-lg bg-indigo-600/90 hover:bg-indigo-700 text-white text-[11px] font-semibold shadow-sm transition-colors"
+                              title="Сделать это фото основным"
+                            >
+                              ★ Сделать основным
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePhoto(safeActivePhotoIndex)}
+                            className="w-7 h-7 rounded-lg bg-rose-600/90 hover:bg-rose-700 text-white text-xs font-bold flex items-center justify-center shadow-sm transition-colors"
+                            title="Удалить это фото"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Дополнительные фотографии в меньшем формате рядом с основным фото */}
+                    {currentCardImages.length > 1 && (
+                      <div className="flex sm:flex-col gap-2 overflow-x-auto sm:overflow-y-auto sm:w-24 sm:max-h-72 shrink-0 pr-0.5">
+                        {currentCardImages.map((imgUrl, idx) => {
+                          const isSelected = idx === safeActivePhotoIndex;
+                          return (
+                            <div
+                              key={`${imgUrl}-${idx}`}
+                              onClick={() => setActivePhotoIndex(idx)}
+                              className={`relative w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border-2 cursor-pointer transition-all shrink-0 bg-white ${
+                                isSelected
+                                  ? 'border-indigo-600 ring-2 ring-indigo-200 scale-[1.02]'
+                                  : 'border-slate-200 opacity-75 hover:opacity-100 hover:border-slate-300'
+                              }`}
+                              title={`Фото ${idx + 1}${idx === 0 ? ' (Основное)' : ''}`}
+                            >
+                              <img
+                                src={imgUrl}
+                                alt={`Миниатюра ${idx + 1}`}
+                                className="w-full h-full object-cover"
+                              />
+                              <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] font-bold px-1 rounded">
+                                {idx + 1}
+                              </span>
+                              {userRole === 'owner' && isEditingProduct && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemovePhoto(idx);
+                                  }}
+                                  className="absolute top-1 right-1 w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center opacity-85 hover:opacity-100"
+                                  title="Удалить фото"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center space-y-2">
+                    <div className="text-3xl text-slate-300">📷</div>
+                    <p className="text-xs font-medium text-slate-500">
+                      У этого товара пока нет загруженных фотографий
+                    </p>
+                    {userRole === 'owner' && !isEditingProduct && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditingProduct(true);
+                          setEditFormData({
+                            name: selectedProductDetails.name || '',
+                            govCode: selectedProductDetails.govCode || '',
+                            price: selectedProductDetails.price || 0,
+                            description: selectedProductDetails.description || '',
+                            images: parseProductImages(selectedProductDetails.images)
+                          });
+                        }}
+                        className="mt-1 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs font-semibold transition-colors"
+                      >
+                        <span>✏️ Открыть редактирование (добавить фото и описание)</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* БЛОК ОПИСАНИЯ ТОВАРА (в режиме просмотра) */}
+              {!isEditingProduct && (
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                      Описание товара
+                    </h3>
+                    {userRole === 'owner' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditingProduct(true);
+                          setEditFormData({
+                            name: selectedProductDetails.name || '',
+                            govCode: selectedProductDetails.govCode || '',
+                            price: selectedProductDetails.price || 0,
+                            description: selectedProductDetails.description || '',
+                            images: parseProductImages(selectedProductDetails.images)
+                          });
+                        }}
+                        className="text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+                      >
+                        ✏️ Изменить
+                      </button>
+                    )}
+                  </div>
+                  {selectedProductDetails.description && selectedProductDetails.description.trim() ? (
+                    <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
+                      {selectedProductDetails.description}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-slate-400 italic">
+                      Описание товара пока не добавлено. Нажмите «Изменить» (✏️), чтобы добавить описание.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* БЛОК РЕДАКТИРОВАНИЯ (показывается при нажатии на карандаш ✏️) */}
               {isEditingProduct && userRole === 'owner' && (
                 <div className="bg-amber-50/70 p-5 rounded-2xl border border-amber-200 space-y-4 animate-fade-in">
-                  <h3 className="text-xs font-bold text-amber-700 uppercase tracking-widest">Редактирование данных</h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-amber-700 uppercase tracking-widest">
+                      Редактирование карточки товара
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setIsCloudinarySettingsOpen(!isCloudinarySettingsOpen)}
+                      className="text-xs font-semibold text-amber-700 hover:underline flex items-center gap-1"
+                    >
+                      <span>⚙️ Настройки Cloudinary</span>
+                    </button>
+                  </div>
+
+                  {/* Настройки Cloudinary внутри редакции карточки */}
+                  {isCloudinarySettingsOpen && (
+                    <div className="bg-white p-3.5 rounded-xl border border-amber-300 space-y-2.5 text-xs">
+                      <div className="font-bold text-slate-700">
+                        Настройки Cloudinary (для загрузки фотографий в облако)
+                      </div>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                        Укажите ваш <strong>Cloud Name</strong> и имя <strong>Upload Preset</strong> с режимом <em>Unsigned</em> (Settings → Upload → Upload presets в панели Cloudinary).
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                            Cloud Name
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="например: dxyz12345"
+                            value={cloudinaryCloudName}
+                            onChange={(e) => setCloudinaryCloudName(e.target.value)}
+                            className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                            Upload Preset (Unsigned)
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="например: unsigned_preset"
+                            value={cloudinaryUploadPreset}
+                            onChange={(e) => setCloudinaryUploadPreset(e.target.value)}
+                            className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={handleSaveCloudinarySettings}
+                          className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-lg"
+                        >
+                          Сохранить настройки Cloudinary
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 mb-1">Наименование</label>
@@ -1235,7 +1768,70 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="flex gap-2 pt-1">
+                  {/* Редактирование описания товара */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">
+                      Описание товара
+                    </label>
+                    <textarea
+                      rows={4}
+                      placeholder="Введите подробное описание товара, состав, размеры или особенности..."
+                      value={editFormData.description}
+                      onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-amber-300 rounded-xl text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-y"
+                    />
+                  </div>
+
+                  {/* Загрузка фотографий в Cloudinary прямо в редакции карточки */}
+                  <div className="space-y-2.5 pt-1 border-t border-amber-200/80">
+                    <label className="block text-xs font-semibold text-slate-500">
+                      Фотографии товара (сохраняются в Cloudinary, а ссылки — в БД)
+                    </label>
+
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <label
+                        className={`flex-1 py-2.5 px-4 rounded-xl border-2 border-dashed text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors ${
+                          isUploadingPhoto
+                            ? 'bg-slate-100 border-slate-300 text-slate-400 cursor-wait'
+                            : 'bg-white border-amber-400 text-amber-800 hover:bg-amber-100/60'
+                        }`}
+                      >
+                        <span>
+                          {isUploadingPhoto
+                            ? '⏳ Загрузка фото в Cloudinary...'
+                            : '☁️ Выбрать и загрузить фото (можно несколько)'}
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          disabled={isUploadingPhoto}
+                          onChange={handleUploadPhotosToCloudinary}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+
+                    {/* Дополнительная возможность вставить готовую ссылку на фото */}
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        placeholder="Или вставьте готовую ссылку на фото (https://...)"
+                        value={manualPhotoUrl}
+                        onChange={(e) => setManualPhotoUrl(e.target.value)}
+                        className="flex-1 px-3 py-1.5 bg-white border border-amber-300 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddPhotoByUrl}
+                        className="px-3 py-1.5 bg-white border border-amber-400 hover:bg-amber-100 text-amber-800 font-semibold rounded-xl text-xs transition-colors shrink-0"
+                      >
+                        + Добавить ссылку
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
                     <button
                       onClick={async () => {
                         if (!editFormData.name.trim()) {
@@ -1244,11 +1840,14 @@ export default function App() {
                         }
 
                         try {
+                          const serializedImages = JSON.stringify(editFormData.images || []);
                           // Отправляем каждое измененное поле в формате, который ожидает сервер { field, value }
                           const updates = [
                             { field: 'name', value: editFormData.name.trim() },
                             { field: 'govCode', value: editFormData.govCode.trim() },
-                            { field: 'price', value: Number(editFormData.price) }
+                            { field: 'price', value: Number(editFormData.price) },
+                            { field: 'description', value: (editFormData.description || '').trim() },
+                            { field: 'images', value: serializedImages }
                           ];
 
                           for (const update of updates) {
@@ -1264,24 +1863,26 @@ export default function App() {
                             if (!res.ok) throw new Error('Ошибка сохранения');
                           }
 
-                          showToast('Товар успешно обновлен', 'success');
+                          showToast('Товар, описание и фото успешно сохранены в БД', 'success');
                           
                           // Обновляем состояние открытой карточки с правильными ключами Turso
                           setSelectedProductDetails({ 
                             ...selectedProductDetails, 
                             name: editFormData.name.trim(),
                             govCode: editFormData.govCode.trim(),
-                            price: Number(editFormData.price)
+                            price: Number(editFormData.price),
+                            description: (editFormData.description || '').trim(),
+                            images: serializedImages
                           });
                           setIsEditingProduct(false);
                           fetchData(); 
                         } catch (err) {
-                          showToast('Ошибка сети', 'error');
+                          showToast('Ошибка сети при сохранении', 'error');
                         }
                       }}
                       className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl shadow-md transition-colors text-sm"
                     >
-                      Сохранить
+                      Сохранить изменения
                     </button>
                     <button
                       onClick={() => setIsEditingProduct(false)}
@@ -1292,6 +1893,7 @@ export default function App() {
                   </div>
                 </div>
               )}
+
               {/* Блок: Остаток и Цена */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 flex flex-col justify-center items-center text-center">
@@ -1335,6 +1937,7 @@ export default function App() {
                   )}
                 </div>
               </div>
+
               {/* Блок прямой продажи из карточки */}
               <div className="bg-indigo-50/50 p-5 rounded-2xl border border-indigo-100 space-y-3">
                 <h3 className="text-xs font-bold text-indigo-600 uppercase tracking-widest">Быстрая продажа</h3>
@@ -1386,6 +1989,7 @@ export default function App() {
                   </button>
                 </div>
               </div>
+
               {/* Блок: Коды и кнопка QR */}
               <div className="flex justify-between items-center bg-slate-50 px-5 py-4 rounded-2xl border border-slate-200">
                 <div>

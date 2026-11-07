@@ -1,0 +1,402 @@
+/* ==========================================================================
+   ДИЗАЙН-СИСТЕМА МАГАЗИНА ПО ОБРАЗЦУ HTTPS://AKNYET.KZ (shop/shop.css)
+   Палитра из оригинальной темы Aknyet.kz (theme6 / user.lightblue.css):
+   - Primary: #43A4CF (небесно-голубой)
+   - Accent:  #FFCD24 (солнечно-желтый)
+   - Фон:     #F9F9FA
+   - Текст:   #2E2F38 / #4B4E54
+   - Шрифты:  'Rubik' (заголовки, цены, кнопки) и 'Roboto' (основной текст)
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Rubik:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --akn-primary: #43A4CF;
+  --akn-primary-dark: #338eb8;
+  --akn-primary-10: rgba(67, 164, 207, 0.1);
+  --akn-primary-20: rgba(67, 164, 207, 0.2);
+
+  --akn-accent: #FFCD24;
+  --akn-accent-hover: #f3bf10;
+  --akn-accent-15: rgba(255, 205, 36, 0.15);
+
+  --akn-bg: #F9F9FA;
+  --akn-card-bg: #FFFFFF;
+  --akn-text: #2E2F38;
+  --akn-text-sec: #4B4E54;
+  --akn-text-muted: #838691;
+  --akn-border: #D2D3E0;
+  --akn-border-light: #E8E9F0;
+
+  --akn-success: #5ABF70;
+  --akn-error: #FF604E;
+  --akn-disable: #EFEFEF;
+  --akn-disable-text: #9A9CA6;
+
+  --akn-radius-wrap: 25px;
+  --akn-radius-inner: 16px;
+  --akn-radius-btn: 12px;
+  --akn-radius-sm: 8px;
+
+  --akn-font-body: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+  --akn-font-head: 'Rubik', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  --akn-shadow-card: 0 4px 20px rgba(46, 47, 56, 0.05);
+  --akn-shadow-hover: 0 12px 28px rgba(46, 47, 56, 0.12);
+  --akn-shadow-primary: 0 6px 20px rgba(67, 164, 207, 0.25);
+  --akn-shadow-accent: 0 6px 20px rgba(255, 205, 36, 0.28);
+}
+
+.aknyet-shop-wrapper {
+  min-height: 100vh;
+  background-color: var(--akn-bg);
+  color: var(--akn-text);
+  font-family: var(--akn-font-body);
+  font-size: 15px;
+  line-height: 1.45;
+  display: flex;
+  flex-direction: column;
+}
+
+.aknyet-shop-wrapper h1,
+.aknyet-shop-wrapper h2,
+.aknyet-shop-wrapper h3,
+.aknyet-shop-wrapper h4,
+.akn-font-rubik {
+  font-family: var(--akn-font-head);
+}
+
+.akn-container {
+  width: 100%;
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+/* Верхняя промо-полоса (timer-block из aknyet.kz) */
+.akn-promo-bar {
+  background: linear-gradient(90deg, #2E2F38 0%, #3b4254 100%);
+  color: #ffffff;
+  font-size: 13px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.akn-promo-btn {
+  background-color: var(--akn-accent);
+  color: var(--akn-text);
+  font-family: var(--akn-font-head);
+  font-weight: 600;
+  font-size: 12px;
+  padding: 5px 14px;
+  border-radius: 8px;
+  transition: all 0.18s ease;
+}
+
+.akn-promo-btn:hover {
+  background-color: var(--akn-accent-hover);
+  transform: translateY(-1px);
+}
+
+/* Шапка сайта (site-header invert_header из aknyet.kz) */
+.akn-header-top {
+  background-color: var(--akn-primary);
+  color: #ffffff;
+  font-size: 14px;
+}
+
+.akn-header-bottom {
+  background-color: #ffffff;
+  border-bottom: 1px solid var(--akn-border-light);
+  box-shadow: 0 4px 16px rgba(46, 47, 56, 0.04);
+}
+
+/* Поисковая строка (smart-search-block из aknyet.kz) */
+.akn-search-box {
+  position: relative;
+  width: 100%;
+}
+
+.akn-search-form {
+  display: flex;
+  align-items: center;
+  background: var(--akn-bg);
+  border: 2px solid var(--akn-border);
+  border-radius: var(--akn-radius-btn);
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.akn-search-form:focus-within {
+  background: #ffffff;
+  border-color: var(--akn-primary);
+  box-shadow: 0 0 0 4px var(--akn-primary-10);
+}
+
+.akn-search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 11px 16px;
+  font-size: 15px;
+  color: var(--akn-text);
+  outline: none;
+}
+
+.akn-search-btn {
+  background-color: var(--akn-primary);
+  color: #ffffff;
+  font-family: var(--akn-font-head);
+  font-weight: 500;
+  padding: 11px 22px;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background-color 0.18s ease;
+}
+
+.akn-search-btn:hover {
+  background-color: var(--akn-primary-dark);
+}
+
+/* Выпадающее окно умного поиска (#search-result из aknyet.kz) */
+.akn-search-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border-radius: var(--akn-radius-inner);
+  border: 1px solid var(--akn-border-light);
+  box-shadow: 0 16px 40px rgba(46, 47, 56, 0.16);
+  z-index: 60;
+  max-height: 440px;
+  overflow-y: auto;
+}
+
+/* Главный баннер-слайдер (site-top-slider из aknyet.kz) */
+.akn-hero-banner {
+  border-radius: var(--akn-radius-wrap);
+  overflow: hidden;
+  position: relative;
+  min-height: 360px;
+  box-shadow: var(--akn-shadow-card);
+}
+
+.akn-hero-glass {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(8px);
+  padding: 32px 36px;
+  border-radius: var(--akn-radius-inner);
+  max-width: 540px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+/* Плитки категорий с количеством товаров (site-folders-in-block_2 из aknyet.kz) */
+.akn-folder-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 20px;
+  background: #ffffff;
+  border: 1px solid var(--akn-border-light);
+  border-radius: var(--akn-radius-btn);
+  font-family: var(--akn-font-head);
+  font-weight: 500;
+  color: var(--akn-text);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  box-shadow: 0 2px 8px rgba(46, 47, 56, 0.03);
+}
+
+.akn-folder-pill:hover {
+  border-color: var(--akn-primary);
+  color: var(--akn-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--akn-shadow-card);
+}
+
+.akn-folder-pill.active {
+  background-color: var(--akn-primary);
+  border-color: var(--akn-primary);
+  color: #ffffff;
+  box-shadow: var(--akn-shadow-primary);
+}
+
+.akn-folder-count {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background-color: var(--akn-bg);
+  color: var(--akn-text-sec);
+}
+
+.akn-folder-pill.active .akn-folder-count {
+  background-color: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+
+/* Карточка товара (shop2-product-item из aknyet.kz) */
+.akn-product-card {
+  background: var(--akn-card-bg);
+  border-radius: var(--akn-radius-inner);
+  border: 1px solid var(--akn-border-light);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  transition: all 0.22s ease;
+  box-shadow: var(--akn-shadow-card);
+  position: relative;
+}
+
+.akn-product-card:hover {
+  box-shadow: var(--akn-shadow-hover);
+  border-color: var(--akn-border);
+  transform: translateY(-3px);
+}
+
+.akn-product-image-wrap {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  background-color: #f4f6f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.akn-quick-view-btn {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  opacity: 0;
+  background: rgba(46, 47, 56, 0.86);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 7px 14px;
+  border-radius: 20px;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(4px);
+  border: none;
+  cursor: pointer;
+}
+
+.akn-product-card:hover .akn-quick-view-btn {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Кнопка «В корзину» (shop-product-btn type-2 buy из aknyet.kz) */
+.akn-buy-btn {
+  background-color: var(--akn-accent);
+  color: var(--akn-text);
+  font-family: var(--akn-font-head);
+  font-weight: 600;
+  font-size: 14px;
+  padding: 10px 18px;
+  border-radius: var(--akn-radius-btn);
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.akn-buy-btn:hover:not(:disabled) {
+  background-color: var(--akn-accent-hover);
+  box-shadow: var(--akn-shadow-accent);
+  transform: translateY(-1px);
+}
+
+.akn-buy-btn:disabled {
+  background-color: var(--akn-disable);
+  color: var(--akn-disable-text);
+  cursor: not-allowed;
+}
+
+/* Счетчик количества (- 1 +) в карточке */
+.akn-qty-control {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--akn-border);
+  border-radius: var(--akn-radius-btn);
+  background: #ffffff;
+  overflow: hidden;
+  height: 40px;
+}
+
+.akn-qty-btn {
+  width: 32px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--akn-text-sec);
+  font-weight: 700;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease;
+}
+
+.akn-qty-btn:hover:not(:disabled) {
+  background-color: var(--akn-bg);
+  color: var(--akn-primary);
+}
+
+.akn-qty-input {
+  width: 36px;
+  text-align: center;
+  font-family: var(--akn-font-head);
+  font-weight: 600;
+  font-size: 14px;
+  border: none;
+  outline: none;
+  color: var(--akn-text);
+  background: transparent;
+}
+
+/* Статус наличия */
+.akn-stock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.akn-stock-badge.in-stock {
+  color: var(--akn-success);
+}
+
+.akn-stock-badge.out-of-stock {
+  color: var(--akn-error);
+}
+
+/* Анимация появления модальных окон */
+@keyframes aknFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.akn-animate-in {
+  animation: aknFadeIn 0.22s ease-out forwards;
+}

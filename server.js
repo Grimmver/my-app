@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { setupShopRoutes } from './shop/shopBackend.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,6 +15,8 @@ app.use(cors());
 app.use(express.json());
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key';
+const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || '';
+const CLOUDINARY_UPLOAD_PRESET = process.env.CLOUDINARY_UPLOAD_PRESET || '';
 //const SHARED_PASSWORD = "123"; // Ваш пароль для входа
 
 // Подключение к облачной базе Turso
@@ -45,17 +48,27 @@ const db = createClient({
         quantity INTEGER,
         price REAL,
         cost REAL,
-        categoryId TEXT
+        categoryId TEXT,
+        description TEXT DEFAULT "",
+        images TEXT DEFAULT "[]"
       );
     `);
     
-    // 3. Безопасное добавление колонок для аналитики продаж (если их еще нет)
+    // 3. Безопасное добавление колонок для аналитики продаж, описания и фотографий (если их еще нет)
     try {
       await db.execute('ALTER TABLE products ADD COLUMN sold_quantity INTEGER DEFAULT 0');
     } catch (e) { /* Игнорируем ошибку, если колонка уже существует */ }
 
     try {
       await db.execute('ALTER TABLE products ADD COLUMN realized_profit REAL DEFAULT 0');
+    } catch (e) { /* Игнорируем ошибку, если колонка уже существует */ }
+
+    try {
+      await db.execute('ALTER TABLE products ADD COLUMN description TEXT DEFAULT ""');
+    } catch (e) { /* Игнорируем ошибку, если колонка уже существует */ }
+
+    try {
+      await db.execute('ALTER TABLE products ADD COLUMN images TEXT DEFAULT "[]"');
     } catch (e) { /* Игнорируем ошибку, если колонка уже существует */ }
     
     // 4. Таблица истории
@@ -153,14 +166,18 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// API: Получение всех данных (товары и категории)
+// API: Получение всех данных (товары, категории и конфигурация Cloudinary из среды)
 app.get('/api/data', authenticate, async (req, res) => {
   try {
     const productsResult = await db.execute('SELECT * FROM products');
     const categoriesResult = await db.execute('SELECT * FROM categories');
     res.json({ 
       products: productsResult.rows, 
-      categories: categoriesResult.rows 
+      categories: categoriesResult.rows,
+      cloudinary: {
+        cloudName: process.env.CLOUDINARY_CLOUD_NAME || CLOUDINARY_CLOUD_NAME,
+        uploadPreset: process.env.CLOUDINARY_UPLOAD_PRESET || CLOUDINARY_UPLOAD_PRESET
+      }
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -201,11 +218,18 @@ app.get('/api/history/export', authenticate, async (req, res) => {
 // API: Добавление одного товара
 app.post('/api/products', authenticate, async (req, res) => {
   const p = req.body;
+  const descriptionVal = typeof p.description === 'string' ? p.description : '';
+  const imagesVal = Array.isArray(p.images)
+    ? JSON.stringify(p.images)
+    : typeof p.images === 'string'
+    ? p.images
+    : '[]';
+
   try {
     await db.execute({
-      sql: `INSERT INTO products (id, name, internalCode, govCode, quantity, price, cost, categoryId) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [p.id, p.name, p.internalCode, p.govCode, p.quantity, p.price, p.cost, p.categoryId]
+      sql: `INSERT INTO products (id, name, internalCode, govCode, quantity, price, cost, categoryId, description, images) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [p.id, p.name, p.internalCode, p.govCode, p.quantity, p.price, p.cost, p.categoryId, descriptionVal, imagesVal]
     });
     res.json({ success: true });
   } catch (err) {
@@ -213,15 +237,30 @@ app.post('/api/products', authenticate, async (req, res) => {
   }
 });
 
-// API: Быстрое редактирование поля товара (Инвентаризация)
+// API: Быстрое редактирование поля товара (Инвентаризация и карточка товара)
 app.put('/api/products/:id', authenticate, async (req, res) => {
   const { id } = req.params;
   const { field, value } = req.body;
   
-  const allowedFields = ['name', 'quantity', 'price', 'cost', 'categoryId', 'internalCode', 'govCode'];
+  const allowedFields = [
+    'name',
+    'quantity',
+    'price',
+    'cost',
+    'categoryId',
+    'internalCode',
+    'govCode',
+    'description',
+    'images'
+  ];
   if (!allowedFields.includes(field)) {
     return res.status(400).json({ error: 'Недопустимое поле' });
   }
+
+  const dbValue =
+    field === 'images' && Array.isArray(value)
+      ? JSON.stringify(value)
+      : value ?? '';
 
   try {
     const oldData = await db.execute({
@@ -239,17 +278,31 @@ app.put('/api/products/:id', authenticate, async (req, res) => {
 
     await db.execute({
       sql: `UPDATE products SET ${field} = ? WHERE id = ?`,
-      args: [value, id]
+      args: [dbValue, id]
     });
 
-    if (String(oldValue) !== String(value)) {
+    const oldStr = oldValue === null || oldValue === undefined ? '' : String(oldValue);
+    const newStr = dbValue === null || dbValue === undefined ? '' : String(dbValue);
+
+    if (oldStr !== newStr) {
+      let historyOldVal = oldStr;
+      let historyNewVal = newStr;
+
+      // Для описания не сохраняем сам текст в историю, а фиксируем только факт изменения
+      if (field === 'description') {
+        const hadOldText = oldStr.trim().length > 0;
+        const hasNewText = newStr.trim().length > 0;
+        historyOldVal = hadOldText ? 'заполнено' : 'пусто';
+        historyNewVal = hasNewText ? 'новое' : 'пусто';
+      }
+
       await db.execute({
         sql: `INSERT INTO history (product_id, product_name, field, old_value, new_value, user_name) VALUES (?, ?, ?, ?, ?, ?)`,
-        args: [id, productName, field, String(oldValue), String(value), req.user.username || 'Система']
+        args: [id, productName, field, historyOldVal, historyNewVal, req.user.username || 'Система']
       });
     }
 
-    res.json({ success: true });
+    res.json({ success: true, value: dbValue });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -406,6 +459,9 @@ app.delete('/api/categories/:id', authenticate, async (req, res) => {
     res.status(500).json({ error: 'Ошибка сервера при обновлении товара' });
   }
 });*/
+// Подключение маршрутов интернет-магазина (из папки shop/)
+setupShopRoutes(app, db);
+
 // Раздача интерфейса React
 app.use(express.static(path.join(__dirname, 'dist')));
 
